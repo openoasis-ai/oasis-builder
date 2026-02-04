@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
@@ -23,41 +23,26 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
   const [tileSprites, setTileSprites] = useState<TileSprite[]>([]);
   const [detailSprites, setDetailSprites] = useState<TileSprite[]>([]);
   const [buildingSprites, setBuildingSprites] = useState<TileSprite[]>([]);
+  const [tilePreviews, setTilePreviews] = useState<string[]>([]);
+  const [detailPreviews, setDetailPreviews] = useState<string[]>([]);
+  const [buildingPreviews, setBuildingPreviews] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [selectedType, setSelectedType] = useState<'tiles' | 'details' | 'buildings'>('tiles');
   const [currentLayer, setCurrentLayer] = useState(0);
   const [gridPosition, setGridPosition] = useState({ x: 0, y: 0 });
-  const tileCanvasRefs = useRef<{ [key: number]: HTMLCanvasElement | null }>({});
-  const detailCanvasRefs = useRef<{ [key: number]: HTMLCanvasElement | null }>({});
-  const buildingCanvasRefs = useRef<{ [key: number]: HTMLCanvasElement | null }>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleTilesLoaded = (event: CustomEvent) => {
-      const sprites = event.detail.tileSprites;
-      setTileSprites(sprites);
-
-      setTimeout(() => {
-        drawTilePreviews(sprites, tileCanvasRefs, '/assets/cityTiles_sheet.png');
-      }, 100);
+      setTileSprites(event.detail.tileSprites);
     };
 
     const handleDetailsLoaded = (event: CustomEvent) => {
-      const sprites = event.detail.detailSprites;
-      setDetailSprites(sprites);
-
-      setTimeout(() => {
-        drawTilePreviews(sprites, detailCanvasRefs, '/assets/cityDetails_sheet.png');
-      }, 100);
+      setDetailSprites(event.detail.detailSprites);
     };
 
     const handleBuildingsLoaded = (event: CustomEvent) => {
-      const sprites = event.detail.buildingSprites;
-      setBuildingSprites(sprites);
-
-      setTimeout(() => {
-        drawTilePreviews(sprites, buildingCanvasRefs, '/assets/buildingTiles_sheet.png');
-      }, 100);
+      setBuildingSprites(event.detail.buildingSprites);
     };
 
     const handleGridPositionChange = (event: CustomEvent) => {
@@ -77,42 +62,62 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
     };
   }, []);
 
-  const drawTilePreviews = (
-    sprites: TileSprite[],
-    canvasRefs: React.MutableRefObject<{ [key: number]: HTMLCanvasElement | null }>,
-    imageSrc: string
-  ) => {
-    sprites.forEach((sprite, index) => {
-      const canvas = canvasRefs.current[index];
-      if (!canvas) return;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
+  const generatePreviews = async (sprites: TileSprite[], imageSrc: string): Promise<string[]> => {
+    return new Promise((resolve) => {
       const img = new Image();
-      img.src = imageSrc;
-
       img.onload = () => {
-        const scale = Math.min(46 / sprite.width, 46 / sprite.height) * 0.85;
-        const drawWidth = sprite.width * scale;
-        const drawHeight = sprite.height * scale;
-        const offsetX = (46 - drawWidth) / 2;
-        const offsetY = (46 - drawHeight) / 2;
+        const previews = sprites.map((sprite) => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 46;
+          canvas.height = 46;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return '';
 
-        ctx.clearRect(0, 0, 46, 46);
-        ctx.drawImage(img,
-          sprite.x, sprite.y, sprite.width, sprite.height,
-          offsetX, offsetY, drawWidth, drawHeight);
+          const scale = Math.min(46 / sprite.width, 46 / sprite.height) * 0.85;
+          const drawWidth = sprite.width * scale;
+          const drawHeight = sprite.height * scale;
+          const offsetX = (46 - drawWidth) / 2;
+          const offsetY = (46 - drawHeight) / 2;
+
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(
+            img,
+            sprite.x, sprite.y, sprite.width, sprite.height,
+            offsetX, offsetY, drawWidth, drawHeight
+          );
+
+          return canvas.toDataURL();
+        });
+        resolve(previews);
       };
+      img.onerror = () => resolve([]);
+      img.src = imageSrc;
     });
   };
+
+  useEffect(() => {
+    if (tileSprites.length > 0 && tilePreviews.length === 0) {
+      generatePreviews(tileSprites, '/assets/cityTiles_sheet.png').then(setTilePreviews);
+    }
+  }, [tileSprites, tilePreviews.length]);
+
+  useEffect(() => {
+    if (detailSprites.length > 0 && detailPreviews.length === 0) {
+      generatePreviews(detailSprites, '/assets/cityDetails_sheet.png').then(setDetailPreviews);
+    }
+  }, [detailSprites, detailPreviews.length]);
+
+  useEffect(() => {
+    if (buildingSprites.length > 0 && buildingPreviews.length === 0) {
+      generatePreviews(buildingSprites, '/assets/buildingTiles_sheet.png').then(setBuildingPreviews);
+    }
+  }, [buildingSprites, buildingPreviews.length]);
 
   const handleTileClick = (tileIndex: number, type: 'tiles' | 'details' | 'buildings') => {
     setSelectedIndex(tileIndex);
     setSelectedType(type);
     onTileSelect(tileIndex);
 
-    // Call Phaser's setSelectedTile with type
     if ((window as any).phaserSetSelectedTile) {
       (window as any).phaserSetSelectedTile(tileIndex, type);
     }
@@ -153,7 +158,6 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
       }
     };
     reader.readAsText(file);
-
     event.target.value = '';
   };
 
@@ -218,19 +222,14 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
           <TabsContent value="tiles" className="flex-1 mt-2">
             <ScrollArea className="h-[500px]">
               <div className="grid grid-cols-6 gap-1">
-                {tileSprites.map((sprite, index) => (
+                {tilePreviews.map((preview, index) => (
                   <Button
                     key={index}
                     variant={selectedType === 'tiles' && index === selectedIndex ? "default" : "outline"}
                     className="w-12 h-12 p-0"
                     onClick={() => handleTileClick(index, 'tiles')}
                   >
-                    <canvas
-                      ref={(el) => { tileCanvasRefs.current[index] = el; }}
-                      width={46}
-                      height={46}
-                      className="w-full h-full"
-                    />
+                    {preview && <img src={preview} alt="" className="w-full h-full" />}
                   </Button>
                 ))}
               </div>
@@ -240,19 +239,14 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
           <TabsContent value="details" className="flex-1 mt-2">
             <ScrollArea className="h-[500px]">
               <div className="grid grid-cols-6 gap-1">
-                {detailSprites.map((sprite, index) => (
+                {detailPreviews.map((preview, index) => (
                   <Button
                     key={index}
                     variant={selectedType === 'details' && index === selectedIndex ? "default" : "outline"}
                     className="w-12 h-12 p-0"
                     onClick={() => handleTileClick(index, 'details')}
                   >
-                    <canvas
-                      ref={(el) => { detailCanvasRefs.current[index] = el; }}
-                      width={46}
-                      height={46}
-                      className="w-full h-full"
-                    />
+                    {preview && <img src={preview} alt="" className="w-full h-full" />}
                   </Button>
                 ))}
               </div>
@@ -262,19 +256,14 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
           <TabsContent value="buildings" className="flex-1 mt-2">
             <ScrollArea className="h-[500px]">
               <div className="grid grid-cols-6 gap-1">
-                {buildingSprites.map((sprite, index) => (
+                {buildingPreviews.map((preview, index) => (
                   <Button
                     key={index}
                     variant={selectedType === 'buildings' && index === selectedIndex ? "default" : "outline"}
                     className="w-12 h-12 p-0"
                     onClick={() => handleTileClick(index, 'buildings')}
                   >
-                    <canvas
-                      ref={(el) => { buildingCanvasRefs.current[index] = el; }}
-                      width={46}
-                      height={46}
-                      className="w-full h-full"
-                    />
+                    {preview && <img src={preview} alt="" className="w-full h-full" />}
                   </Button>
                 ))}
               </div>
@@ -294,6 +283,7 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
 
         <div className="pt-2 border-t text-xs text-muted-foreground">
           <p>Position: ({gridPosition.x}, {gridPosition.y})</p>
+          <p>Layer: {currentLayer}</p>
         </div>
       </CardContent>
     </Card>
