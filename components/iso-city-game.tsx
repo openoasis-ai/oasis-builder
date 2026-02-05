@@ -996,6 +996,12 @@ export function IsoCityGame({
             height: img.height,
           };
 
+          // Hide/destroy hover sprite before texture manipulation to prevent glTexture errors
+          if (scene.hoverSprite) {
+            scene.hoverSprite.destroy();
+            scene.hoverSprite = null;
+          }
+
           // Remove old texture and add new one
           scene.textures.remove(textureKey);
 
@@ -1029,6 +1035,10 @@ export function IsoCityGame({
 
             // Update asset set
             assetSet.sprites.push(newSprite);
+
+            // Reset hover position to force recreation of hover sprite on next move
+            scene.lastHoverGridX = -1;
+            scene.lastHoverGridY = -1;
 
             console.log(
               `Added sprite ${newSprite.name} to asset set ${assetId}`
