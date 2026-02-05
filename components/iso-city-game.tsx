@@ -376,7 +376,7 @@ export function IsoCityGame({
         });
 
         this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gameObjects: any, _deltaX: number, deltaY: number) => {
-          const zoomAmount = deltaY > 0 ? -0.1 : 0.1;
+          const zoomAmount = deltaY > 0 ? -0.03 : 0.03;
           const newZoom = Phaser.Math.Clamp(this.cameras.main.zoom + zoomAmount, 0.3, 2);
           this.cameras.main.zoom = newZoom;
         });
@@ -715,6 +715,110 @@ export function IsoCityGame({
         // Redraw grid
         scene.drawGrid();
       }
+    };
+
+    // Add custom asset set at runtime
+    (window as any).phaserAddCustomAsset = (
+      id: string,
+      name: string,
+      imageDataUrl: string,
+      sprites: Array<{ name: string; x: number; y: number; width: number; height: number; footprint?: { width: number; height: number } }>
+    ) => {
+      const scene = game.scene.getScene('CityBuilder') as any;
+      if (!scene) return false;
+
+      const textureKey = `texture_${id}`;
+
+      // Load the image as a texture
+      return new Promise<boolean>((resolve) => {
+        // Create an image element to load the data URL
+        const img = new Image();
+        img.onload = () => {
+          // Add texture to Phaser
+          if (scene.textures.exists(textureKey)) {
+            scene.textures.remove(textureKey);
+          }
+          scene.textures.addImage(textureKey, img);
+
+          const sourceTexture = scene.textures.get(textureKey);
+
+          // Add frames for each sprite
+          sprites.forEach((sprite) => {
+            sourceTexture.add(sprite.name, 0, sprite.x, sprite.y, sprite.width, sprite.height);
+          });
+
+          // Create asset set
+          const assetSet = {
+            id,
+            name,
+            textureKey,
+            xmlKey: `custom_${id}`,
+            sprites
+          };
+
+          scene.assetSets.set(id, assetSet);
+          console.log(`Added custom asset set: ${name} with ${sprites.length} sprites`);
+
+          // Emit event for UI to update
+          window.dispatchEvent(new CustomEvent('phaserAssetSetLoaded', {
+            detail: { assetSet, imagePath: imageDataUrl }
+          }));
+
+          resolve(true);
+        };
+        img.onerror = () => {
+          console.error('Failed to load custom asset image');
+          resolve(false);
+        };
+        img.src = imageDataUrl;
+      });
+    };
+
+    // Remove custom asset set
+    (window as any).phaserRemoveCustomAsset = (id: string) => {
+      const scene = game.scene.getScene('CityBuilder') as any;
+      if (scene && scene.assetSets.has(id)) {
+        const textureKey = `texture_${id}`;
+
+        // First, remove all placed tiles that use this texture
+        const keysToRemove: string[] = [];
+        scene.cityMap.forEach((tileData: any, key: string) => {
+          if (tileData.textureKey === textureKey) {
+            if (tileData.sprite) {
+              tileData.sprite.destroy();
+            }
+            keysToRemove.push(key);
+          }
+        });
+        keysToRemove.forEach((key: string) => scene.cityMap.delete(key));
+
+        // Reset selection if this asset set was selected
+        if (scene.selectedAssetSetId === id) {
+          const allIds = Array.from(scene.assetSets.keys()) as string[];
+          const remainingIds = allIds.filter(k => k !== id);
+          scene.selectedAssetSetId = remainingIds[0] || '';
+          scene.selectedSpriteIndex = 0;
+        }
+
+        // Clear hover sprite if it uses this texture
+        if (scene.hoverSprite) {
+          scene.hoverSprite.setVisible(false);
+        }
+
+        // Remove the asset set first, then the texture
+        scene.assetSets.delete(id);
+
+        // Use a small delay to ensure all references are cleared before removing texture
+        setTimeout(() => {
+          if (scene.textures.exists(textureKey)) {
+            scene.textures.remove(textureKey);
+          }
+        }, 100);
+
+        window.dispatchEvent(new CustomEvent('phaserAssetSetRemoved', { detail: { id } }));
+        return true;
+      }
+      return false;
     };
 
     return () => {

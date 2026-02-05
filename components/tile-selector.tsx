@@ -4,8 +4,9 @@ import { useEffect, useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
-import { Download, Upload } from 'lucide-react';
+import { Download, Upload, Trash2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { SpritePacker } from './sprite-packer';
 
 interface SpriteData {
   name: string;
@@ -27,6 +28,7 @@ interface AssetSet {
 interface AssetSetWithPreviews extends AssetSet {
   previews: string[];
   imagePath: string;
+  isCustom?: boolean;
 }
 
 interface TileSelectorProps {
@@ -53,8 +55,9 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
       const customEvent = event as CustomEvent;
       const assetSet: AssetSet = customEvent.detail.assetSet;
 
-      // Determine image path from texture key
-      const imagePath = TEXTURE_TO_IMAGE[assetSet.textureKey] ||
+      // Use imagePath from event if provided (for custom assets), otherwise determine from texture key
+      const imagePath = customEvent.detail.imagePath ||
+        TEXTURE_TO_IMAGE[assetSet.textureKey] ||
         `/assets/${assetSet.id}_sheet.png`;
 
       // Generate previews asynchronously
@@ -64,8 +67,9 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
           newMap.set(assetSet.id, {
             ...assetSet,
             previews,
-            imagePath
-          });
+            imagePath,
+            isCustom: !TEXTURE_TO_IMAGE[assetSet.textureKey]
+          } as AssetSetWithPreviews);
           return newMap;
         });
       });
@@ -74,19 +78,38 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
       setSelectedAssetSetId((current) => current || assetSet.id);
     };
 
+    const handleAssetSetRemoved = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { id } = customEvent.detail;
+      setAssetSets((prev) => {
+        const newMap = new Map(prev);
+        newMap.delete(id);
+        return newMap;
+      });
+      setSelectedAssetSetId((current) => {
+        if (current === id) {
+          const remaining = Array.from(assetSets.keys()).filter(k => k !== id);
+          return remaining[0] || '';
+        }
+        return current;
+      });
+    };
+
     const handleGridPositionChange = (event: Event) => {
       const customEvent = event as CustomEvent;
       setGridPosition(customEvent.detail);
     };
 
     window.addEventListener('phaserAssetSetLoaded', handleAssetSetLoaded);
+    window.addEventListener('phaserAssetSetRemoved', handleAssetSetRemoved);
     window.addEventListener('gridPositionChange', handleGridPositionChange);
 
     return () => {
       window.removeEventListener('phaserAssetSetLoaded', handleAssetSetLoaded);
+      window.removeEventListener('phaserAssetSetRemoved', handleAssetSetRemoved);
       window.removeEventListener('gridPositionChange', handleGridPositionChange);
     };
-  }, []);
+  }, [assetSets]);
 
   const generatePreviews = async (sprites: SpriteData[], imageSrc: string): Promise<string[]> => {
     return new Promise((resolve) => {
@@ -169,6 +192,12 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
     event.target.value = '';
   };
 
+  const handleRemoveCustomAsset = (id: string) => {
+    if ((window as any).phaserRemoveCustomAsset) {
+      (window as any).phaserRemoveCustomAsset(id);
+    }
+  };
+
   const assetSetArray = Array.from(assetSets.values());
 
   return (
@@ -221,6 +250,9 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
             </div>
           </div>
 
+          {/* Custom Asset Packer */}
+          <SpritePacker />
+
           {/* Dynamic Tabs for Asset Sets */}
           {assetSetArray.length > 0 && (
             <Tabs
@@ -228,20 +260,32 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
               onValueChange={setSelectedAssetSetId}
               className="flex-1 flex flex-col overflow-hidden min-h-0"
             >
-              <TabsList
-                className="w-full flex-shrink-0"
-                style={{ display: 'grid', gridTemplateColumns: `repeat(${assetSetArray.length}, 1fr)` }}
-              >
-                {assetSetArray.map((assetSet) => (
-                  <TabsTrigger key={assetSet.id} value={assetSet.id} className="text-xs px-1">
-                    {assetSet.name.replace('City ', '')} ({assetSet.sprites.length})
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+              <div className="w-full flex-shrink-0 overflow-x-auto">
+                <TabsList className="inline-flex w-max min-w-full">
+                  {assetSetArray.map((assetSet) => (
+                    <TabsTrigger key={assetSet.id} value={assetSet.id} className="text-xs px-2 whitespace-nowrap">
+                      {assetSet.name.replace('City ', '')} ({assetSet.sprites.length})
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
 
               {assetSetArray.map((assetSet) => (
-                <TabsContent key={assetSet.id} value={assetSet.id} className="flex-1 mt-2 overflow-hidden">
-                  <ScrollArea className="h-full">
+                <TabsContent key={assetSet.id} value={assetSet.id} className="flex-1 mt-2 overflow-hidden flex flex-col min-h-0">
+                  {assetSet.isCustom && (
+                    <div className="flex justify-end mb-1 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs text-destructive hover:text-destructive"
+                        onClick={() => handleRemoveCustomAsset(assetSet.id)}
+                      >
+                        <Trash2 className="w-3 h-3 mr-1" />
+                        Remove
+                      </Button>
+                    </div>
+                  )}
+                  <div className="flex-1 min-h-0 overflow-auto">
                     <div className="grid grid-cols-6 gap-1 pr-2">
                       {assetSet.previews.map((preview, index) => {
                         const sprite = assetSet.sprites[index];
@@ -266,7 +310,7 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
                         );
                       })}
                     </div>
-                  </ScrollArea>
+                  </div>
                 </TabsContent>
               ))}
             </Tabs>
