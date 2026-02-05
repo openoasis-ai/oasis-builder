@@ -5,12 +5,54 @@
 import { useEffect, useRef } from 'react';
 import Phaser from 'phaser';
 
+export interface SpriteData {
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  footprint?: { width: number; height: number }; // For multi-tile support
+}
+
+export interface AssetSet {
+  id: string;
+  name: string;
+  textureKey: string;
+  xmlKey: string;
+  sprites: SpriteData[];
+}
+
+export interface AssetConfig {
+  id: string;
+  name: string;
+  imagePath: string;
+  xmlPath: string;
+}
+
 interface IsoCityGameProps {
   onTileSelect?: (tileIndex: number) => void;
   onGridPositionChange?: (x: number, y: number) => void;
+  tileWidth?: number;
+  tileHeight?: number;
+  gridSize?: number;
+  assetConfigs?: AssetConfig[];
 }
 
-export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameProps) {
+// Default asset configurations
+const DEFAULT_ASSET_CONFIGS: AssetConfig[] = [
+  { id: 'tiles', name: 'City Tiles', imagePath: '/assets/cityTiles_sheet.png', xmlPath: '/assets/cityTiles_sheet.xml' },
+  { id: 'details', name: 'City Details', imagePath: '/assets/cityDetails_sheet.png', xmlPath: '/assets/cityDetails_sheet.xml' },
+  { id: 'buildings', name: 'Buildings', imagePath: '/assets/buildingTiles_sheet.png', xmlPath: '/assets/buildingTiles_sheet.xml' },
+];
+
+export function IsoCityGame({
+  onTileSelect,
+  onGridPositionChange,
+  tileWidth: propTileWidth = 132,
+  tileHeight: propTileHeight = 66,
+  gridSize: propGridSize = 30,
+  assetConfigs = DEFAULT_ASSET_CONFIGS
+}: IsoCityGameProps) {
   const gameRef = useRef<HTMLDivElement>(null);
   const phaserGameRef = useRef<Phaser.Game | null>(null);
 
@@ -18,15 +60,13 @@ export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameP
     if (!gameRef.current || phaserGameRef.current) return;
 
     class CityBuilder extends Phaser.Scene {
-      gridSize = 30;
-      tileWidth = 132;
-      tileHeight = 66;
+      gridSize = propGridSize;
+      tileWidth = propTileWidth;
+      tileHeight = propTileHeight;
       cityMap = new Map();
-      selectedTileIndex = 0;
-      tileSprites: any[] = [];
-      detailSprites: any[] = [];
-      buildingSprites: any[] = [];
-      selectedSpriteType: 'tiles' | 'details' | 'buildings' = 'tiles';
+      selectedSpriteIndex = 0;
+      assetSets: Map<string, AssetSet> = new Map();
+      selectedAssetSetId = '';
       currentLayer = 0; // For stacking buildings
       hoverSprite: Phaser.GameObjects.Image | null = null;
       hoverGraphics!: Phaser.GameObjects.Graphics;
@@ -34,6 +74,13 @@ export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameP
       wasd!: any;
       lastHoverGridX = -1;
       lastHoverGridY = -1;
+      assetConfigList = assetConfigs;
+      isPanning = false;
+      spaceKeyDown = false;
+      panStartX = 0;
+      panStartY = 0;
+      panStartScrollX = 0;
+      panStartScrollY = 0;
 
       constructor() {
         super({ key: 'CityBuilder' });
@@ -41,12 +88,14 @@ export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameP
 
       preload() {
         console.log('Loading assets...');
-        this.load.image('cityTiles', '/assets/cityTiles_sheet.png');
-        this.load.image('cityDetails', '/assets/cityDetails_sheet.png');
-        this.load.image('buildingTiles', '/assets/buildingTiles_sheet.png');
-        this.load.text('cityTilesXML', '/assets/cityTiles_sheet.xml');
-        this.load.text('cityDetailsXML', '/assets/cityDetails_sheet.xml');
-        this.load.text('buildingTilesXML', '/assets/buildingTiles_sheet.xml');
+
+        // Dynamically load all configured asset sets
+        this.assetConfigList.forEach((config) => {
+          const textureKey = `texture_${config.id}`;
+          const xmlKey = `xml_${config.id}`;
+          this.load.image(textureKey, config.imagePath);
+          this.load.text(xmlKey, config.xmlPath);
+        });
 
         this.load.on('complete', () => {
           console.log('Assets loaded successfully');
@@ -58,9 +107,16 @@ export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameP
       }
 
       create() {
-        this.parseAndCreateFrames();
-        this.parseAndCreateDetailsFrames();
-        this.parseAndCreateBuildingFrames();
+        // Parse all configured asset sets
+        this.assetConfigList.forEach((config) => {
+          this.parseAssetSet(config);
+        });
+
+        // Select first asset set by default
+        if (this.assetConfigList.length > 0) {
+          this.selectedAssetSetId = this.assetConfigList[0].id;
+        }
+
         this.cameras.main.setBackgroundColor('#87CEEB');
         this.cameras.main.zoom = 0.6; // Start more zoomed out
 
@@ -81,31 +137,30 @@ export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameP
           left: Phaser.Input.Keyboard.KeyCodes.A,
           right: Phaser.Input.Keyboard.KeyCodes.D
         });
-
-        this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-          this.updateHoverPreview(pointer);
-        });
       }
 
-      parseAndCreateFrames() {
-        const xmlText = this.cache.text.get('cityTilesXML');
+      parseAssetSet(config: AssetConfig) {
+        const textureKey = `texture_${config.id}`;
+        const xmlKey = `xml_${config.id}`;
+        const xmlText = this.cache.text.get(xmlKey);
 
         if (!xmlText) {
-          console.error('Failed to load cityTilesXML');
+          console.error(`Failed to load XML for asset set: ${config.id}`);
           return;
         }
 
-        // Parse XML text
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
         const subtextures = xmlDoc.querySelectorAll('SubTexture');
 
-        const sourceTexture = this.textures.get('cityTiles');
+        const sourceTexture = this.textures.get(textureKey);
 
         if (!sourceTexture) {
-          console.error('Failed to load cityTiles texture');
+          console.error(`Failed to load texture for asset set: ${config.id}`);
           return;
         }
+
+        const sprites: SpriteData[] = [];
 
         subtextures.forEach((subtexture: Element) => {
           const name = subtexture.getAttribute('name')!;
@@ -114,112 +169,39 @@ export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameP
           const width = parseInt(subtexture.getAttribute('width')!);
           const height = parseInt(subtexture.getAttribute('height')!);
 
-          sourceTexture.add(name, 0, x, y, width, height);
-
-          this.tileSprites.push({
-            name: name,
-            x: x,
-            y: y,
-            width: width,
-            height: height
-          });
-        });
-
-        console.log(`Loaded ${this.tileSprites.length} tile sprites`);
-
-        // Emit tiles loaded event
-        window.dispatchEvent(new CustomEvent('phaserTilesLoaded', {
-          detail: { tileSprites: this.tileSprites }
-        }));
-      }
-
-      parseAndCreateDetailsFrames() {
-        const xmlText = this.cache.text.get('cityDetailsXML');
-
-        if (!xmlText) {
-          console.error('Failed to load cityDetailsXML');
-          return;
-        }
-
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-        const subtextures = xmlDoc.querySelectorAll('SubTexture');
-
-        const sourceTexture = this.textures.get('cityDetails');
-
-        if (!sourceTexture) {
-          console.error('Failed to load cityDetails texture');
-          return;
-        }
-
-        subtextures.forEach((subtexture: Element) => {
-          const name = subtexture.getAttribute('name')!;
-          const x = parseInt(subtexture.getAttribute('x')!);
-          const y = parseInt(subtexture.getAttribute('y')!);
-          const width = parseInt(subtexture.getAttribute('width')!);
-          const height = parseInt(subtexture.getAttribute('height')!);
+          // Support for multi-tile footprint in XML (optional attributes)
+          const footprintWidth = subtexture.getAttribute('footprintWidth');
+          const footprintHeight = subtexture.getAttribute('footprintHeight');
+          const footprint = footprintWidth && footprintHeight
+            ? { width: parseInt(footprintWidth), height: parseInt(footprintHeight) }
+            : undefined;
 
           sourceTexture.add(name, 0, x, y, width, height);
 
-          this.detailSprites.push({
-            name: name,
-            x: x,
-            y: y,
-            width: width,
-            height: height
+          sprites.push({
+            name,
+            x,
+            y,
+            width,
+            height,
+            footprint
           });
         });
 
-        console.log(`Loaded ${this.detailSprites.length} detail sprites`);
+        const assetSet: AssetSet = {
+          id: config.id,
+          name: config.name,
+          textureKey,
+          xmlKey,
+          sprites
+        };
 
-        // Emit details loaded event
-        window.dispatchEvent(new CustomEvent('phaserDetailsLoaded', {
-          detail: { detailSprites: this.detailSprites }
-        }));
-      }
+        this.assetSets.set(config.id, assetSet);
+        console.log(`Loaded ${sprites.length} sprites for asset set: ${config.name}`);
 
-      parseAndCreateBuildingFrames() {
-        const xmlText = this.cache.text.get('buildingTilesXML');
-
-        if (!xmlText) {
-          console.error('Failed to load buildingTilesXML');
-          return;
-        }
-
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-        const subtextures = xmlDoc.querySelectorAll('SubTexture');
-
-        const sourceTexture = this.textures.get('buildingTiles');
-
-        if (!sourceTexture) {
-          console.error('Failed to load buildingTiles texture');
-          return;
-        }
-
-        subtextures.forEach((subtexture: Element) => {
-          const name = subtexture.getAttribute('name')!;
-          const x = parseInt(subtexture.getAttribute('x')!);
-          const y = parseInt(subtexture.getAttribute('y')!);
-          const width = parseInt(subtexture.getAttribute('width')!);
-          const height = parseInt(subtexture.getAttribute('height')!);
-
-          sourceTexture.add(name, 0, x, y, width, height);
-
-          this.buildingSprites.push({
-            name: name,
-            x: x,
-            y: y,
-            width: width,
-            height: height
-          });
-        });
-
-        console.log(`Loaded ${this.buildingSprites.length} building sprites`);
-
-        // Emit buildings loaded event
-        window.dispatchEvent(new CustomEvent('phaserBuildingsLoaded', {
-          detail: { buildingSprites: this.buildingSprites }
+        // Emit generic asset loaded event
+        window.dispatchEvent(new CustomEvent('phaserAssetSetLoaded', {
+          detail: { assetSet }
         }));
       }
 
@@ -259,29 +241,41 @@ export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameP
         if (gridPos.gridX >= 0 && gridPos.gridX < this.gridSize &&
             gridPos.gridY >= 0 && gridPos.gridY < this.gridSize) {
 
-          const isoPos = this.gridToIso(gridPos.gridX, gridPos.gridY);
+          const assetSet = this.assetSets.get(this.selectedAssetSetId);
+          const sprite = assetSet?.sprites[this.selectedSpriteIndex];
+          const footprint = sprite?.footprint || { width: 1, height: 1 };
 
+          // Draw hover indicator for all footprint tiles
           this.hoverGraphics.lineStyle(2, 0x00ff00, 0.8);
           this.hoverGraphics.fillStyle(0x00ff00, 0.2);
-          this.hoverGraphics.beginPath();
-          this.hoverGraphics.moveTo(isoPos.x, isoPos.y - this.tileHeight / 2);
-          this.hoverGraphics.lineTo(isoPos.x + this.tileWidth / 2, isoPos.y);
-          this.hoverGraphics.lineTo(isoPos.x, isoPos.y + this.tileHeight / 2);
-          this.hoverGraphics.lineTo(isoPos.x - this.tileWidth / 2, isoPos.y);
-          this.hoverGraphics.closePath();
-          this.hoverGraphics.strokePath();
-          this.hoverGraphics.fillPath();
 
-          // Update sprite position instead of destroying/creating
-          const sprites = this.selectedSpriteType === 'tiles' ? this.tileSprites :
-                          this.selectedSpriteType === 'details' ? this.detailSprites :
-                          this.buildingSprites;
-          const textureKey = this.selectedSpriteType === 'tiles' ? 'cityTiles' :
-                             this.selectedSpriteType === 'details' ? 'cityDetails' :
-                             'buildingTiles';
-          const tileName = sprites[this.selectedTileIndex]?.name;
+          for (let fx = 0; fx < footprint.width; fx++) {
+            for (let fy = 0; fy < footprint.height; fy++) {
+              const tileX = gridPos.gridX + fx;
+              const tileY = gridPos.gridY + fy;
+              if (tileX >= this.gridSize || tileY >= this.gridSize) continue;
 
-          if (tileName) {
+              const isoPos = this.gridToIso(tileX, tileY);
+              this.hoverGraphics.beginPath();
+              this.hoverGraphics.moveTo(isoPos.x, isoPos.y - this.tileHeight / 2);
+              this.hoverGraphics.lineTo(isoPos.x + this.tileWidth / 2, isoPos.y);
+              this.hoverGraphics.lineTo(isoPos.x, isoPos.y + this.tileHeight / 2);
+              this.hoverGraphics.lineTo(isoPos.x - this.tileWidth / 2, isoPos.y);
+              this.hoverGraphics.closePath();
+              this.hoverGraphics.strokePath();
+              this.hoverGraphics.fillPath();
+            }
+          }
+
+          // Position sprite at the center of the footprint
+          const centerX = gridPos.gridX + (footprint.width - 1) / 2;
+          const centerY = gridPos.gridY + (footprint.height - 1) / 2;
+          const isoPos = this.gridToIso(centerX, centerY);
+
+          if (assetSet && sprite) {
+            const textureKey = assetSet.textureKey;
+            const tileName = sprite.name;
+
             if (this.hoverSprite) {
               this.hoverSprite.setTexture(textureKey, tileName);
               this.hoverSprite.setPosition(isoPos.x, isoPos.y - (this.currentLayer * 30));
@@ -329,17 +323,61 @@ export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameP
       }
 
       setupInput() {
+        // Disable right-click context menu on the game canvas
+        this.game.canvas.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+        });
+
+        // Track space key for pan mode
+        this.input.keyboard!.on('keydown-SPACE', () => {
+          this.spaceKeyDown = true;
+          this.game.canvas.style.cursor = 'grab';
+        });
+
+        this.input.keyboard!.on('keyup-SPACE', () => {
+          this.spaceKeyDown = false;
+          if (!this.isPanning) {
+            this.game.canvas.style.cursor = 'default';
+          }
+        });
+
         this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-          if (pointer.leftButtonDown()) {
+          if (this.spaceKeyDown && pointer.leftButtonDown()) {
+            // Start panning with Space + Left Click
+            this.isPanning = true;
+            this.panStartX = pointer.x;
+            this.panStartY = pointer.y;
+            this.panStartScrollX = this.cameras.main.scrollX;
+            this.panStartScrollY = this.cameras.main.scrollY;
+            this.game.canvas.style.cursor = 'grabbing';
+          } else if (pointer.leftButtonDown()) {
             this.placeTile(pointer);
           } else if (pointer.rightButtonDown()) {
             this.removeTile(pointer);
           }
         });
 
+        this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+          if (this.isPanning) {
+            const deltaX = (this.panStartX - pointer.x) / this.cameras.main.zoom;
+            const deltaY = (this.panStartY - pointer.y) / this.cameras.main.zoom;
+            this.cameras.main.scrollX = this.panStartScrollX + deltaX;
+            this.cameras.main.scrollY = this.panStartScrollY + deltaY;
+          } else {
+            this.updateHoverPreview(pointer);
+          }
+        });
+
+        this.input.on('pointerup', () => {
+          if (this.isPanning) {
+            this.isPanning = false;
+            this.game.canvas.style.cursor = this.spaceKeyDown ? 'grab' : 'default';
+          }
+        });
+
         this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gameObjects: any, _deltaX: number, deltaY: number) => {
           const zoomAmount = deltaY > 0 ? -0.1 : 0.1;
-          const newZoom = Phaser.Math.Clamp(this.cameras.main.zoom + zoomAmount, 0.5, 2);
+          const newZoom = Phaser.Math.Clamp(this.cameras.main.zoom + zoomAmount, 0.3, 2);
           this.cameras.main.zoom = newZoom;
         });
       }
@@ -351,31 +389,80 @@ export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameP
         if (gridPos.gridX >= 0 && gridPos.gridX < this.gridSize &&
             gridPos.gridY >= 0 && gridPos.gridY < this.gridSize) {
 
-          const key = `${gridPos.gridX},${gridPos.gridY},${this.currentLayer}`;
+          const assetSet = this.assetSets.get(this.selectedAssetSetId);
+          const spriteData = assetSet?.sprites[this.selectedSpriteIndex];
+          if (!assetSet || !spriteData) return;
 
-          // Check if there's already a tile at this position and layer
-          if (this.cityMap.has(key)) {
-            this.cityMap.get(key).sprite.destroy();
+          const footprint = spriteData.footprint || { width: 1, height: 1 };
+          const textureKey = assetSet.textureKey;
+          const tileName = spriteData.name;
+
+          // Check if all footprint cells are within bounds
+          for (let fx = 0; fx < footprint.width; fx++) {
+            for (let fy = 0; fy < footprint.height; fy++) {
+              const tileX = gridPos.gridX + fx;
+              const tileY = gridPos.gridY + fy;
+              if (tileX >= this.gridSize || tileY >= this.gridSize) return;
+            }
           }
 
-          const isoPos = this.gridToIso(gridPos.gridX, gridPos.gridY);
-          const sprites = this.selectedSpriteType === 'tiles' ? this.tileSprites :
-                          this.selectedSpriteType === 'details' ? this.detailSprites :
-                          this.buildingSprites;
-          const textureKey = this.selectedSpriteType === 'tiles' ? 'cityTiles' :
-                             this.selectedSpriteType === 'details' ? 'cityDetails' :
-                             'buildingTiles';
-          const tileName = sprites[this.selectedTileIndex]?.name;
+          // Clear any existing tiles in the footprint area
+          for (let fx = 0; fx < footprint.width; fx++) {
+            for (let fy = 0; fy < footprint.height; fy++) {
+              const tileX = gridPos.gridX + fx;
+              const tileY = gridPos.gridY + fy;
+              const key = `${tileX},${tileY},${this.currentLayer}`;
+              if (this.cityMap.has(key)) {
+                const existing = this.cityMap.get(key);
+                // Only destroy sprite if it's the anchor cell
+                if (existing.isAnchor) {
+                  existing.sprite.destroy();
+                }
+                this.cityMap.delete(key);
+              }
+            }
+          }
 
-          if (tileName) {
-            // Offset Y position for stacking (higher layers appear above)
-            const yOffset = this.currentLayer * 30;
-            const sprite = this.add.image(isoPos.x, isoPos.y - yOffset, textureKey, tileName);
-            sprite.setOrigin(0.5, 0.65);
-            // Depth includes layer to ensure proper rendering order
-            sprite.setDepth((gridPos.gridX + gridPos.gridY) * 100 + this.currentLayer * 10);
+          // Position sprite at the center of the footprint
+          const centerX = gridPos.gridX + (footprint.width - 1) / 2;
+          const centerY = gridPos.gridY + (footprint.height - 1) / 2;
+          const isoPos = this.gridToIso(centerX, centerY);
 
-            this.cityMap.set(key, { sprite, tileName, textureKey, layer: this.currentLayer });
+          // Offset Y position for stacking (higher layers appear above)
+          const yOffset = this.currentLayer * 30;
+          const sprite = this.add.image(isoPos.x, isoPos.y - yOffset, textureKey, tileName);
+          sprite.setOrigin(0.5, 0.65);
+          // Depth based on center position
+          sprite.setDepth((centerX + centerY) * 100 + this.currentLayer * 10);
+
+          // Store anchor cell with sprite
+          const anchorKey = `${gridPos.gridX},${gridPos.gridY},${this.currentLayer}`;
+          this.cityMap.set(anchorKey, {
+            sprite,
+            tileName,
+            textureKey,
+            layer: this.currentLayer,
+            footprint,
+            isAnchor: true
+          });
+
+          // Mark all other footprint cells (non-anchor)
+          for (let fx = 0; fx < footprint.width; fx++) {
+            for (let fy = 0; fy < footprint.height; fy++) {
+              if (fx === 0 && fy === 0) continue; // Skip anchor
+              const tileX = gridPos.gridX + fx;
+              const tileY = gridPos.gridY + fy;
+              const key = `${tileX},${tileY},${this.currentLayer}`;
+              this.cityMap.set(key, {
+                sprite: null,
+                tileName,
+                textureKey,
+                layer: this.currentLayer,
+                footprint,
+                isAnchor: false,
+                anchorKey
+              });
+            }
           }
         }
       }
@@ -390,15 +477,42 @@ export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameP
           const key = `${gridPos.gridX},${gridPos.gridY},${this.currentLayer}`;
 
           if (this.cityMap.has(key)) {
-            this.cityMap.get(key).sprite.destroy();
-            this.cityMap.delete(key);
+            const tileData = this.cityMap.get(key);
+
+            // Find the anchor cell
+            let anchorKey = key;
+            if (!tileData.isAnchor && tileData.anchorKey) {
+              anchorKey = tileData.anchorKey;
+            }
+
+            const anchorData = this.cityMap.get(anchorKey);
+            if (anchorData) {
+              // Parse anchor position
+              const [anchorX, anchorY, layer] = anchorKey.split(',').map(Number);
+              const footprint = anchorData.footprint || { width: 1, height: 1 };
+
+              // Remove all footprint cells
+              for (let fx = 0; fx < footprint.width; fx++) {
+                for (let fy = 0; fy < footprint.height; fy++) {
+                  const cellKey = `${anchorX + fx},${anchorY + fy},${layer}`;
+                  this.cityMap.delete(cellKey);
+                }
+              }
+
+              // Destroy the sprite
+              if (anchorData.sprite) {
+                anchorData.sprite.destroy();
+              }
+            }
           }
         }
       }
 
-      setSelectedTile(index: number, type: 'tiles' | 'details' | 'buildings' = 'tiles') {
-        this.selectedTileIndex = index;
-        this.selectedSpriteType = type;
+      setSelectedTile(index: number, assetSetId?: string) {
+        this.selectedSpriteIndex = index;
+        if (assetSetId && this.assetSets.has(assetSetId)) {
+          this.selectedAssetSetId = assetSetId;
+        }
         // Force hover update by resetting last position
         this.lastHoverGridX = -1;
         this.lastHoverGridY = -1;
@@ -414,19 +528,31 @@ export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameP
       exportMap() {
         const mapData: any[] = [];
         this.cityMap.forEach((tileData: any, key: string) => {
+          // Only export anchor cells (avoid duplicates for multi-tile sprites)
+          if (!tileData.isAnchor) return;
+
           const [gridX, gridY, layer] = key.split(',').map(Number);
-          mapData.push({
+          const exportTile: any = {
             x: gridX,
             y: gridY,
             layer: layer || 0,
             tileName: tileData.tileName,
-            textureKey: tileData.textureKey || 'cityTiles'
-          });
+            textureKey: tileData.textureKey
+          };
+
+          // Include footprint if it's multi-tile
+          if (tileData.footprint && (tileData.footprint.width > 1 || tileData.footprint.height > 1)) {
+            exportTile.footprint = tileData.footprint;
+          }
+
+          mapData.push(exportTile);
         });
 
         const jsonData = {
-          version: '1.0',
+          version: '2.0',
           gridSize: this.gridSize,
+          tileWidth: this.tileWidth,
+          tileHeight: this.tileHeight,
           tiles: mapData,
           timestamp: new Date().toISOString()
         };
@@ -446,24 +572,60 @@ export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameP
       loadMap(jsonData: any) {
         try {
           // Clear existing map
-          this.cityMap.forEach((tileData: any) => tileData.sprite.destroy());
+          this.cityMap.forEach((tileData: any) => {
+            if (tileData.sprite) tileData.sprite.destroy();
+          });
           this.cityMap.clear();
 
           // Load tiles from JSON
           jsonData.tiles.forEach((tile: any) => {
-            const isoPos = this.gridToIso(tile.x, tile.y);
-            const textureKey = tile.textureKey || 'cityTiles';
+            const footprint = tile.footprint || { width: 1, height: 1 };
             const layer = tile.layer || 0;
+
+            // Handle legacy textureKey format (convert old format to new)
+            let textureKey = tile.textureKey;
+            if (textureKey === 'cityTiles') textureKey = 'texture_tiles';
+            else if (textureKey === 'cityDetails') textureKey = 'texture_details';
+            else if (textureKey === 'buildingTiles') textureKey = 'texture_buildings';
+            else if (!textureKey.startsWith('texture_')) textureKey = `texture_${textureKey}`;
+
+            // Position sprite at the center of the footprint
+            const centerX = tile.x + (footprint.width - 1) / 2;
+            const centerY = tile.y + (footprint.height - 1) / 2;
+            const isoPos = this.gridToIso(centerX, centerY);
             const yOffset = layer * 30;
+
             const sprite = this.add.image(isoPos.x, isoPos.y - yOffset, textureKey, tile.tileName);
             sprite.setOrigin(0.5, 0.65);
-            sprite.setDepth((tile.x + tile.y) * 100 + layer * 10);
-            this.cityMap.set(`${tile.x},${tile.y},${layer}`, {
+            sprite.setDepth((centerX + centerY) * 100 + layer * 10);
+
+            // Store anchor cell
+            const anchorKey = `${tile.x},${tile.y},${layer}`;
+            this.cityMap.set(anchorKey, {
               sprite,
               tileName: tile.tileName,
               textureKey,
-              layer
+              layer,
+              footprint,
+              isAnchor: true
             });
+
+            // Mark all other footprint cells
+            for (let fx = 0; fx < footprint.width; fx++) {
+              for (let fy = 0; fy < footprint.height; fy++) {
+                if (fx === 0 && fy === 0) continue;
+                const cellKey = `${tile.x + fx},${tile.y + fy},${layer}`;
+                this.cityMap.set(cellKey, {
+                  sprite: null,
+                  tileName: tile.tileName,
+                  textureKey,
+                  layer,
+                  footprint,
+                  isAnchor: false,
+                  anchorKey
+                });
+              }
+            }
           });
 
           console.log('Map loaded with', jsonData.tiles.length, 'tiles');
@@ -509,10 +671,10 @@ export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameP
     phaserGameRef.current = game;
 
     // Expose game functions to window
-    (window as any).phaserSetSelectedTile = (index: number, type: 'tiles' | 'details' | 'buildings' = 'tiles') => {
+    (window as any).phaserSetSelectedTile = (index: number, assetSetId?: string) => {
       const scene = game.scene.getScene('CityBuilder') as any;
       if (scene) {
-        scene.setSelectedTile(index, type);
+        scene.setSelectedTile(index, assetSetId);
       }
     };
 
@@ -534,6 +696,24 @@ export function IsoCityGame({ onTileSelect, onGridPositionChange }: IsoCityGameP
       const scene = game.scene.getScene('CityBuilder') as any;
       if (scene) {
         scene.loadMap(jsonData);
+      }
+    };
+
+    (window as any).phaserGetAssetSets = () => {
+      const scene = game.scene.getScene('CityBuilder') as any;
+      if (scene) {
+        return Array.from(scene.assetSets.values());
+      }
+      return [];
+    };
+
+    (window as any).phaserSetTileDimensions = (tileWidth: number, tileHeight: number) => {
+      const scene = game.scene.getScene('CityBuilder') as any;
+      if (scene) {
+        scene.tileWidth = tileWidth;
+        scene.tileHeight = tileHeight;
+        // Redraw grid
+        scene.drawGrid();
       }
     };
 

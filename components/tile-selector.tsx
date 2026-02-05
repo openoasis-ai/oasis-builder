@@ -1,68 +1,94 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Download, Upload } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-interface TileSprite {
+interface SpriteData {
   name: string;
   x: number;
   y: number;
   width: number;
   height: number;
+  footprint?: { width: number; height: number };
+}
+
+interface AssetSet {
+  id: string;
+  name: string;
+  textureKey: string;
+  xmlKey: string;
+  sprites: SpriteData[];
+}
+
+interface AssetSetWithPreviews extends AssetSet {
+  previews: string[];
+  imagePath: string;
 }
 
 interface TileSelectorProps {
   onTileSelect: (index: number) => void;
 }
 
+// Map texture keys to image paths
+const TEXTURE_TO_IMAGE: Record<string, string> = {
+  'texture_tiles': '/assets/cityTiles_sheet.png',
+  'texture_details': '/assets/cityDetails_sheet.png',
+  'texture_buildings': '/assets/buildingTiles_sheet.png',
+};
+
 export function TileSelector({ onTileSelect }: TileSelectorProps) {
-  const [tileSprites, setTileSprites] = useState<TileSprite[]>([]);
-  const [detailSprites, setDetailSprites] = useState<TileSprite[]>([]);
-  const [buildingSprites, setBuildingSprites] = useState<TileSprite[]>([]);
-  const [tilePreviews, setTilePreviews] = useState<string[]>([]);
-  const [detailPreviews, setDetailPreviews] = useState<string[]>([]);
-  const [buildingPreviews, setBuildingPreviews] = useState<string[]>([]);
+  const [assetSets, setAssetSets] = useState<Map<string, AssetSetWithPreviews>>(new Map());
+  const [selectedAssetSetId, setSelectedAssetSetId] = useState<string>('');
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [selectedType, setSelectedType] = useState<'tiles' | 'details' | 'buildings'>('tiles');
   const [currentLayer, setCurrentLayer] = useState(0);
   const [gridPosition, setGridPosition] = useState({ x: 0, y: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const handleTilesLoaded = (event: CustomEvent) => {
-      setTileSprites(event.detail.tileSprites);
+    const handleAssetSetLoaded = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const assetSet: AssetSet = customEvent.detail.assetSet;
+
+      // Determine image path from texture key
+      const imagePath = TEXTURE_TO_IMAGE[assetSet.textureKey] ||
+        `/assets/${assetSet.id}_sheet.png`;
+
+      // Generate previews asynchronously
+      generatePreviews(assetSet.sprites, imagePath).then((previews) => {
+        setAssetSets((prev) => {
+          const newMap = new Map(prev);
+          newMap.set(assetSet.id, {
+            ...assetSet,
+            previews,
+            imagePath
+          });
+          return newMap;
+        });
+      });
+
+      // Select first asset set by default
+      setSelectedAssetSetId((current) => current || assetSet.id);
     };
 
-    const handleDetailsLoaded = (event: CustomEvent) => {
-      setDetailSprites(event.detail.detailSprites);
+    const handleGridPositionChange = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      setGridPosition(customEvent.detail);
     };
 
-    const handleBuildingsLoaded = (event: CustomEvent) => {
-      setBuildingSprites(event.detail.buildingSprites);
-    };
-
-    const handleGridPositionChange = (event: CustomEvent) => {
-      setGridPosition(event.detail);
-    };
-
-    window.addEventListener('phaserTilesLoaded', handleTilesLoaded as EventListener);
-    window.addEventListener('phaserDetailsLoaded', handleDetailsLoaded as EventListener);
-    window.addEventListener('phaserBuildingsLoaded', handleBuildingsLoaded as EventListener);
-    window.addEventListener('gridPositionChange', handleGridPositionChange as EventListener);
+    window.addEventListener('phaserAssetSetLoaded', handleAssetSetLoaded);
+    window.addEventListener('gridPositionChange', handleGridPositionChange);
 
     return () => {
-      window.removeEventListener('phaserTilesLoaded', handleTilesLoaded as EventListener);
-      window.removeEventListener('phaserDetailsLoaded', handleDetailsLoaded as EventListener);
-      window.removeEventListener('phaserBuildingsLoaded', handleBuildingsLoaded as EventListener);
-      window.removeEventListener('gridPositionChange', handleGridPositionChange as EventListener);
+      window.removeEventListener('phaserAssetSetLoaded', handleAssetSetLoaded);
+      window.removeEventListener('gridPositionChange', handleGridPositionChange);
     };
   }, []);
 
-  const generatePreviews = async (sprites: TileSprite[], imageSrc: string): Promise<string[]> => {
+  const generatePreviews = async (sprites: SpriteData[], imageSrc: string): Promise<string[]> => {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -95,31 +121,13 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
     });
   };
 
-  useEffect(() => {
-    if (tileSprites.length > 0 && tilePreviews.length === 0) {
-      generatePreviews(tileSprites, '/assets/cityTiles_sheet.png').then(setTilePreviews);
-    }
-  }, [tileSprites, tilePreviews.length]);
-
-  useEffect(() => {
-    if (detailSprites.length > 0 && detailPreviews.length === 0) {
-      generatePreviews(detailSprites, '/assets/cityDetails_sheet.png').then(setDetailPreviews);
-    }
-  }, [detailSprites, detailPreviews.length]);
-
-  useEffect(() => {
-    if (buildingSprites.length > 0 && buildingPreviews.length === 0) {
-      generatePreviews(buildingSprites, '/assets/buildingTiles_sheet.png').then(setBuildingPreviews);
-    }
-  }, [buildingSprites, buildingPreviews.length]);
-
-  const handleTileClick = (tileIndex: number, type: 'tiles' | 'details' | 'buildings') => {
+  const handleTileClick = (tileIndex: number, assetSetId: string) => {
     setSelectedIndex(tileIndex);
-    setSelectedType(type);
+    setSelectedAssetSetId(assetSetId);
     onTileSelect(tileIndex);
 
     if ((window as any).phaserSetSelectedTile) {
-      (window as any).phaserSetSelectedTile(tileIndex, type);
+      (window as any).phaserSetSelectedTile(tileIndex, assetSetId);
     }
   };
 
@@ -161,138 +169,117 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
     event.target.value = '';
   };
 
+  const assetSetArray = Array.from(assetSets.values());
+
   return (
     <Card className="w-80 h-full flex flex-col">
-      <CardHeader>
-        <CardTitle className="text-lg">🏙️ City Builder</CardTitle>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg">City Builder</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4 flex-1 flex flex-col overflow-hidden">
-        {/* Save/Load Buttons */}
-        <div className="flex gap-2">
-          <Button onClick={handleExport} className="flex-1" variant="outline" size="sm">
-            <Download className="w-4 h-4 mr-2" />
-            Export
-          </Button>
-          <Button onClick={handleImport} className="flex-1" variant="outline" size="sm">
-            <Upload className="w-4 h-4 mr-2" />
-            Import
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json"
-            onChange={handleFileLoad}
-            className="hidden"
-          />
-        </div>
-
-        {/* Layer Controls */}
-        <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
-          <span className="text-xs font-medium">Layer: {currentLayer}</span>
-          <div className="flex gap-1 ml-auto">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => handleLayerChange(-1)}
-              disabled={currentLayer === 0}
-              className="h-7 px-2"
-            >
-              -
+        <CardContent className="space-y-3 flex-1 flex flex-col overflow-hidden pt-0">
+          {/* Save/Load Buttons */}
+          <div className="flex gap-2">
+            <Button onClick={handleExport} className="flex-1" variant="outline" size="sm">
+              <Download className="w-4 h-4 mr-2" />
+              Export
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => handleLayerChange(1)}
-              disabled={currentLayer === 10}
-              className="h-7 px-2"
-            >
-              +
+            <Button onClick={handleImport} className="flex-1" variant="outline" size="sm">
+              <Upload className="w-4 h-4 mr-2" />
+              Import
             </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleFileLoad}
+              className="hidden"
+            />
           </div>
-        </div>
 
-        {/* Info */}
-        <div className="p-2 bg-blue-50 dark:bg-blue-950 rounded-md text-xs">
-          <p className="font-medium mb-1">📐 Tile Config</p>
-          <p className="text-muted-foreground">
-            Current: 132x66 (2:1 ratio)<br/>
-            See <code className="bg-muted px-1 rounded">ASSET_GUIDE.md</code> to customize
-          </p>
-        </div>
-
-        {/* Tabs for Tiles, Details, and Buildings */}
-        <Tabs defaultValue="tiles" className="flex-1 flex flex-col overflow-hidden">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="tiles">Tiles ({tileSprites.length})</TabsTrigger>
-            <TabsTrigger value="details">Details ({detailSprites.length})</TabsTrigger>
-            <TabsTrigger value="buildings">Buildings ({buildingSprites.length})</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="tiles" className="flex-1 mt-2">
-            <ScrollArea className="h-[500px]">
-              <div className="grid grid-cols-6 gap-1">
-                {tilePreviews.map((preview, index) => (
-                  <Button
-                    key={index}
-                    variant={selectedType === 'tiles' && index === selectedIndex ? "default" : "outline"}
-                    className="w-12 h-12 p-0"
-                    onClick={() => handleTileClick(index, 'tiles')}
-                  >
-                    {preview && <img src={preview} alt="" className="w-full h-full" />}
-                  </Button>
-                ))}
-              </div>
-            </ScrollArea>
-          </TabsContent>
-
-          <TabsContent value="details" className="flex-1 mt-2">
-            <ScrollArea className="h-[500px]">
-              <div className="grid grid-cols-6 gap-1">
-                {detailPreviews.map((preview, index) => (
-                  <Button
-                    key={index}
-                    variant={selectedType === 'details' && index === selectedIndex ? "default" : "outline"}
-                    className="w-12 h-12 p-0"
-                    onClick={() => handleTileClick(index, 'details')}
-                  >
-                    {preview && <img src={preview} alt="" className="w-full h-full" />}
-                  </Button>
-                ))}
-              </div>
-            </ScrollArea>
-          </TabsContent>
-
-          <TabsContent value="buildings" className="flex-1 mt-2">
-            <ScrollArea className="h-[500px]">
-              <div className="grid grid-cols-6 gap-1">
-                {buildingPreviews.map((preview, index) => (
-                  <Button
-                    key={index}
-                    variant={selectedType === 'buildings' && index === selectedIndex ? "default" : "outline"}
-                    className="w-12 h-12 p-0"
-                    onClick={() => handleTileClick(index, 'buildings')}
-                  >
-                    {preview && <img src={preview} alt="" className="w-full h-full" />}
-                  </Button>
-                ))}
-              </div>
-            </ScrollArea>
-          </TabsContent>
-        </Tabs>
-
-        <div className="space-y-2 text-sm">
-          <h3 className="font-semibold">Controls:</h3>
-          <div className="space-y-1 text-muted-foreground text-xs">
-            <p>🖱️ Left Click: Place</p>
-            <p>🗑️ Right Click: Delete</p>
-            <p>⌨️ WASD / Arrows: Pan</p>
-            <p>🔄 Wheel: Zoom</p>
+          {/* Layer Controls */}
+          <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
+            <span className="text-xs font-medium">Layer: {currentLayer}</span>
+            <div className="flex gap-1 ml-auto">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleLayerChange(-1)}
+                disabled={currentLayer === 0}
+                className="h-7 px-2"
+              >
+                -
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleLayerChange(1)}
+                disabled={currentLayer === 10}
+                className="h-7 px-2"
+              >
+                +
+              </Button>
+            </div>
           </div>
-        </div>
 
-        <div className="pt-2 border-t text-xs text-muted-foreground">
-          <p>Position: ({gridPosition.x}, {gridPosition.y})</p>
-          <p>Layer: {currentLayer}</p>
+          {/* Dynamic Tabs for Asset Sets */}
+          {assetSetArray.length > 0 && (
+            <Tabs
+              value={selectedAssetSetId}
+              onValueChange={setSelectedAssetSetId}
+              className="flex-1 flex flex-col overflow-hidden min-h-0"
+            >
+              <TabsList
+                className="w-full flex-shrink-0"
+                style={{ display: 'grid', gridTemplateColumns: `repeat(${assetSetArray.length}, 1fr)` }}
+              >
+                {assetSetArray.map((assetSet) => (
+                  <TabsTrigger key={assetSet.id} value={assetSet.id} className="text-xs px-1">
+                    {assetSet.name.replace('City ', '')} ({assetSet.sprites.length})
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+
+              {assetSetArray.map((assetSet) => (
+                <TabsContent key={assetSet.id} value={assetSet.id} className="flex-1 mt-2 overflow-hidden">
+                  <ScrollArea className="h-full">
+                    <div className="grid grid-cols-6 gap-1 pr-2">
+                      {assetSet.previews.map((preview, index) => {
+                        const sprite = assetSet.sprites[index];
+                        const hasFootprint = sprite?.footprint &&
+                          (sprite.footprint.width > 1 || sprite.footprint.height > 1);
+
+                        return (
+                          <Button
+                            key={index}
+                            variant={selectedAssetSetId === assetSet.id && index === selectedIndex ? "default" : "outline"}
+                            className="w-12 h-12 p-0 relative"
+                            onClick={() => handleTileClick(index, assetSet.id)}
+                            title={sprite?.footprint ? `${sprite.footprint.width}x${sprite.footprint.height}` : '1x1'}
+                          >
+                            {preview && <img src={preview} alt="" className="w-full h-full" />}
+                            {hasFootprint && (
+                              <span className="absolute bottom-0 right-0 text-[8px] bg-blue-500 text-white px-0.5 rounded-tl">
+                                {sprite.footprint?.width}x{sprite.footprint?.height}
+                              </span>
+                            )}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+                </TabsContent>
+              ))}
+            </Tabs>
+          )}
+
+          {assetSetArray.length === 0 && (
+            <div className="flex-1 flex items-center justify-center text-muted-foreground">
+              Loading assets...
+            </div>
+          )}
+
+          <div className="pt-2 border-t text-xs text-muted-foreground flex-shrink-0">
+          <p>Position: ({gridPosition.x}, {gridPosition.y}) | Layer: {currentLayer}</p>
         </div>
       </CardContent>
     </Card>
