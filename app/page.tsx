@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import dynamic from 'next/dynamic';
-import { TileSelector } from '@/components/tile-selector';
+import { useState } from "react";
+import dynamic from "next/dynamic";
+import { TileSelector } from "@/components/tile-selector";
 
 // Dynamically import Phaser component to avoid SSR issues
 const IsoCityGame = dynamic(
-  () => import('@/components/iso-city-game').then((mod) => mod.IsoCityGame),
+  () => import("@/components/iso-city-game").then((mod) => mod.IsoCityGame),
   { ssr: false }
 );
 
@@ -21,9 +21,11 @@ export default function Home() {
   const handleGridPositionChange = (x: number, y: number) => {
     setGridPosition({ x, y });
     // Dispatch custom event for TileSelector
-    window.dispatchEvent(new CustomEvent('gridPositionChange', {
-      detail: { x, y }
-    }));
+    window.dispatchEvent(
+      new CustomEvent("gridPositionChange", {
+        detail: { x, y },
+      })
+    );
   };
 
   return (

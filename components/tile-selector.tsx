@@ -1,12 +1,21 @@
-'use client';
+"use client";
 
-import { useEffect, useState, useRef } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Button } from '@/components/ui/button';
-import { Download, Upload, Trash2 } from 'lucide-react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { SpritePacker } from './sprite-packer';
+import { useEffect, useState, useRef } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Download, Upload, X, Plus } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { SpritePacker } from "./sprite-packer";
 
 interface SpriteData {
   name: string;
@@ -37,17 +46,21 @@ interface TileSelectorProps {
 
 // Map texture keys to image paths
 const TEXTURE_TO_IMAGE: Record<string, string> = {
-  'texture_tiles': '/assets/cityTiles_sheet.png',
-  'texture_details': '/assets/cityDetails_sheet.png',
-  'texture_buildings': '/assets/buildingTiles_sheet.png',
+  texture_tiles: "/assets/cityTiles_sheet.png",
+  texture_details: "/assets/cityDetails_sheet.png",
+  texture_buildings: "/assets/buildingTiles_sheet.png",
 };
 
 export function TileSelector({ onTileSelect }: TileSelectorProps) {
-  const [assetSets, setAssetSets] = useState<Map<string, AssetSetWithPreviews>>(new Map());
-  const [selectedAssetSetId, setSelectedAssetSetId] = useState<string>('');
+  const [assetSets, setAssetSets] = useState<Map<string, AssetSetWithPreviews>>(
+    new Map()
+  );
+  const [selectedAssetSetId, setSelectedAssetSetId] = useState<string>("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [currentLayer, setCurrentLayer] = useState(0);
   const [gridPosition, setGridPosition] = useState({ x: 0, y: 0 });
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [addToAssetId, setAddToAssetId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -56,7 +69,8 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
       const assetSet: AssetSet = customEvent.detail.assetSet;
 
       // Use imagePath from event if provided (for custom assets), otherwise determine from texture key
-      const imagePath = customEvent.detail.imagePath ||
+      const imagePath =
+        customEvent.detail.imagePath ||
         TEXTURE_TO_IMAGE[assetSet.textureKey] ||
         `/assets/${assetSet.id}_sheet.png`;
 
@@ -68,7 +82,7 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
             ...assetSet,
             previews,
             imagePath,
-            isCustom: !TEXTURE_TO_IMAGE[assetSet.textureKey]
+            isCustom: !TEXTURE_TO_IMAGE[assetSet.textureKey],
           } as AssetSetWithPreviews);
           return newMap;
         });
@@ -88,8 +102,10 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
       });
       setSelectedAssetSetId((current) => {
         if (current === id) {
-          const remaining = Array.from(assetSets.keys()).filter(k => k !== id);
-          return remaining[0] || '';
+          const remaining = Array.from(assetSets.keys()).filter(
+            (k) => k !== id
+          );
+          return remaining[0] || "";
         }
         return current;
       });
@@ -100,27 +116,36 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
       setGridPosition(customEvent.detail);
     };
 
-    window.addEventListener('phaserAssetSetLoaded', handleAssetSetLoaded);
-    window.addEventListener('phaserAssetSetRemoved', handleAssetSetRemoved);
-    window.addEventListener('gridPositionChange', handleGridPositionChange);
+    window.addEventListener("phaserAssetSetLoaded", handleAssetSetLoaded);
+    window.addEventListener("phaserAssetSetRemoved", handleAssetSetRemoved);
+    window.addEventListener("gridPositionChange", handleGridPositionChange);
 
     return () => {
-      window.removeEventListener('phaserAssetSetLoaded', handleAssetSetLoaded);
-      window.removeEventListener('phaserAssetSetRemoved', handleAssetSetRemoved);
-      window.removeEventListener('gridPositionChange', handleGridPositionChange);
+      window.removeEventListener("phaserAssetSetLoaded", handleAssetSetLoaded);
+      window.removeEventListener(
+        "phaserAssetSetRemoved",
+        handleAssetSetRemoved
+      );
+      window.removeEventListener(
+        "gridPositionChange",
+        handleGridPositionChange
+      );
     };
   }, [assetSets]);
 
-  const generatePreviews = async (sprites: SpriteData[], imageSrc: string): Promise<string[]> => {
+  const generatePreviews = async (
+    sprites: SpriteData[],
+    imageSrc: string
+  ): Promise<string[]> => {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
         const previews = sprites.map((sprite) => {
-          const canvas = document.createElement('canvas');
+          const canvas = document.createElement("canvas");
           canvas.width = 46;
           canvas.height = 46;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return '';
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return "";
 
           const scale = Math.min(46 / sprite.width, 46 / sprite.height) * 0.85;
           const drawWidth = sprite.width * scale;
@@ -131,8 +156,14 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
           ctx.imageSmoothingEnabled = false;
           ctx.drawImage(
             img,
-            sprite.x, sprite.y, sprite.width, sprite.height,
-            offsetX, offsetY, drawWidth, drawHeight
+            sprite.x,
+            sprite.y,
+            sprite.width,
+            sprite.height,
+            offsetX,
+            offsetY,
+            drawWidth,
+            drawHeight
           );
 
           return canvas.toDataURL();
@@ -184,35 +215,48 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
           (window as any).phaserLoadMap(jsonData);
         }
       } catch (error) {
-        console.error('Error loading map file:', error);
-        alert('Error loading map file. Please check the file format.');
+        console.error("Error loading map file:", error);
+        alert("Error loading map file. Please check the file format.");
       }
     };
     reader.readAsText(file);
-    event.target.value = '';
+    event.target.value = "";
   };
 
   const handleRemoveCustomAsset = (id: string) => {
     if ((window as any).phaserRemoveCustomAsset) {
       (window as any).phaserRemoveCustomAsset(id);
     }
+    setDeleteConfirmId(null);
   };
 
   const assetSetArray = Array.from(assetSets.values());
+  const assetToDelete = deleteConfirmId ? assetSets.get(deleteConfirmId) : null;
 
   return (
-    <Card className="w-80 h-full flex flex-col">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-lg">City Builder</CardTitle>
-      </CardHeader>
+    <>
+      <Card className="w-80 h-full flex flex-col">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">City Builder</CardTitle>
+        </CardHeader>
         <CardContent className="space-y-3 flex-1 flex flex-col overflow-hidden pt-0">
           {/* Save/Load Buttons */}
           <div className="flex gap-2">
-            <Button onClick={handleExport} className="flex-1" variant="outline" size="sm">
+            <Button
+              onClick={handleExport}
+              className="flex-1"
+              variant="outline"
+              size="sm"
+            >
               <Download className="w-4 h-4 mr-2" />
               Export
             </Button>
-            <Button onClick={handleImport} className="flex-1" variant="outline" size="sm">
+            <Button
+              onClick={handleImport}
+              className="flex-1"
+              variant="outline"
+              size="sm"
+            >
               <Upload className="w-4 h-4 mr-2" />
               Import
             </Button>
@@ -251,7 +295,10 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
           </div>
 
           {/* Custom Asset Packer */}
-          <SpritePacker />
+          <SpritePacker
+            addToAssetId={addToAssetId}
+            onClose={() => setAddToAssetId(null)}
+          />
 
           {/* Dynamic Tabs for Asset Sets */}
           {assetSetArray.length > 0 && (
@@ -263,52 +310,90 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
               <div className="w-full flex-shrink-0 overflow-x-auto">
                 <TabsList className="inline-flex w-max min-w-full">
                   {assetSetArray.map((assetSet) => (
-                    <TabsTrigger key={assetSet.id} value={assetSet.id} className="text-xs px-2 whitespace-nowrap">
-                      {assetSet.name.replace('City ', '')} ({assetSet.sprites.length})
+                    <TabsTrigger
+                      key={assetSet.id}
+                      value={assetSet.id}
+                      className="text-xs px-2 whitespace-nowrap relative group"
+                    >
+                      {assetSet.name.replace("City ", "")} (
+                      {assetSet.sprites.length})
+                      {assetSet.isCustom && (
+                        <span
+                          role="button"
+                          className="absolute -top-1 -right-1 w-4 h-4 bg-muted-foreground/20 hover:bg-muted-foreground/40 text-muted-foreground rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            setDeleteConfirmId(assetSet.id);
+                          }}
+                        >
+                          <X className="w-3 h-3" />
+                        </span>
+                      )}
                     </TabsTrigger>
                   ))}
                 </TabsList>
               </div>
 
               {assetSetArray.map((assetSet) => (
-                <TabsContent key={assetSet.id} value={assetSet.id} className="flex-1 mt-2 overflow-hidden flex flex-col min-h-0">
-                  {assetSet.isCustom && (
-                    <div className="flex justify-end mb-1 flex-shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 text-xs text-destructive hover:text-destructive"
-                        onClick={() => handleRemoveCustomAsset(assetSet.id)}
-                      >
-                        <Trash2 className="w-3 h-3 mr-1" />
-                        Remove
-                      </Button>
-                    </div>
-                  )}
+                <TabsContent
+                  key={assetSet.id}
+                  value={assetSet.id}
+                  className="flex-1 mt-2 overflow-hidden flex flex-col min-h-0"
+                >
                   <div className="flex-1 min-h-0 overflow-auto">
                     <div className="grid grid-cols-6 gap-1 pr-2">
                       {assetSet.previews.map((preview, index) => {
                         const sprite = assetSet.sprites[index];
-                        const hasFootprint = sprite?.footprint &&
-                          (sprite.footprint.width > 1 || sprite.footprint.height > 1);
+                        const hasFootprint =
+                          sprite?.footprint &&
+                          (sprite.footprint.width > 1 ||
+                            sprite.footprint.height > 1);
 
                         return (
                           <Button
                             key={index}
-                            variant={selectedAssetSetId === assetSet.id && index === selectedIndex ? "default" : "outline"}
+                            variant={
+                              selectedAssetSetId === assetSet.id &&
+                              index === selectedIndex
+                                ? "default"
+                                : "outline"
+                            }
                             className="w-12 h-12 p-0 relative"
                             onClick={() => handleTileClick(index, assetSet.id)}
-                            title={sprite?.footprint ? `${sprite.footprint.width}x${sprite.footprint.height}` : '1x1'}
+                            title={
+                              sprite?.footprint
+                                ? `${sprite.footprint.width}x${sprite.footprint.height}`
+                                : "1x1"
+                            }
                           >
-                            {preview && <img src={preview} alt="" className="w-full h-full" />}
+                            {preview && (
+                              <img
+                                src={preview}
+                                alt=""
+                                className="w-full h-full"
+                              />
+                            )}
                             {hasFootprint && (
                               <span className="absolute bottom-0 right-0 text-[8px] bg-blue-500 text-white px-0.5 rounded-tl">
-                                {sprite.footprint?.width}x{sprite.footprint?.height}
+                                {sprite.footprint?.width}x
+                                {sprite.footprint?.height}
                               </span>
                             )}
                           </Button>
                         );
                       })}
+                      {/* Add button for custom assets */}
+                      {assetSet.isCustom && (
+                        <Button
+                          variant="outline"
+                          className="w-12 h-12 p-0 border-dashed"
+                          onClick={() => setAddToAssetId(assetSet.id)}
+                          title="Add more sprites"
+                        >
+                          <Plus className="w-5 h-5 text-muted-foreground" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </TabsContent>
@@ -323,9 +408,41 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
           )}
 
           <div className="pt-2 border-t text-xs text-muted-foreground flex-shrink-0">
-          <p>Position: ({gridPosition.x}, {gridPosition.y}) | Layer: {currentLayer}</p>
-        </div>
-      </CardContent>
-    </Card>
+            <p>
+              Position: ({gridPosition.x}, {gridPosition.y}) | Layer:{" "}
+              {currentLayer}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog
+        open={!!deleteConfirmId}
+        onOpenChange={(open) => !open && setDeleteConfirmId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Custom Asset?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{assetToDelete?.name}"? This will
+              also remove all placed tiles using this asset from the map. This
+              action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() =>
+                deleteConfirmId && handleRemoveCustomAsset(deleteConfirmId)
+              }
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
