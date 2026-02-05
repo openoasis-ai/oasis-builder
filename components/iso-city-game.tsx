@@ -86,7 +86,7 @@ export function IsoCityGame({
       hoverSprite: Phaser.GameObjects.Image | null = null;
       hoverGraphics!: Phaser.GameObjects.Graphics;
       cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-      wasd!: any;
+      canvasFocused = false;
       lastHoverGridX = -1;
       lastHoverGridY = -1;
       assetConfigList = assetConfigs;
@@ -146,12 +146,10 @@ export function IsoCityGame({
         this.setupInput();
 
         this.cursors = this.input.keyboard!.createCursorKeys();
-        this.wasd = this.input.keyboard!.addKeys({
-          up: Phaser.Input.Keyboard.KeyCodes.W,
-          down: Phaser.Input.Keyboard.KeyCodes.S,
-          left: Phaser.Input.Keyboard.KeyCodes.A,
-          right: Phaser.Input.Keyboard.KeyCodes.D,
-        });
+
+        // Remove all key captures so they don't block input fields
+        // createCursorKeys() adds captures for arrow keys and space which we need to clear
+        this.input.keyboard!.clearCaptures();
       }
 
       parseAssetSet(config: AssetConfig) {
@@ -382,14 +380,42 @@ export function IsoCityGame({
         return { gridX, gridY };
       }
 
+      // Check if user is typing in an input field
+      isUserTyping() {
+        const activeElement = document.activeElement;
+        if (!activeElement) return false;
+        const tagName = activeElement.tagName.toLowerCase();
+        return (
+          tagName === "input" ||
+          tagName === "textarea" ||
+          activeElement.getAttribute("contenteditable") === "true"
+        );
+      }
+
       setupInput() {
         // Disable right-click context menu on the game canvas
         this.game.canvas.addEventListener("contextmenu", (e) => {
           e.preventDefault();
         });
 
-        // Track space key for pan mode
+        // Track canvas focus
+        this.game.canvas.setAttribute("tabindex", "0");
+        this.game.canvas.addEventListener("focus", () => {
+          this.canvasFocused = true;
+        });
+        this.game.canvas.addEventListener("blur", () => {
+          this.canvasFocused = false;
+          this.spaceKeyDown = false;
+          this.game.canvas.style.cursor = "default";
+        });
+        // Focus canvas on click
+        this.game.canvas.addEventListener("mousedown", () => {
+          this.game.canvas.focus();
+        });
+
+        // Track space key for pan mode (only when not typing)
         this.input.keyboard!.on("keydown-SPACE", () => {
+          if (this.isUserTyping()) return;
           this.spaceKeyDown = true;
           this.game.canvas.style.cursor = "grab";
         });
@@ -741,18 +767,21 @@ export function IsoCityGame({
       }
 
       update() {
+        // Don't handle keys when user is typing in input fields
+        if (this.isUserTyping()) return;
+
         const panSpeed = 8;
 
-        if (this.cursors?.left.isDown || this.wasd?.left.isDown) {
+        if (this.cursors?.left.isDown) {
           this.cameras.main.scrollX -= panSpeed;
         }
-        if (this.cursors?.right.isDown || this.wasd?.right.isDown) {
+        if (this.cursors?.right.isDown) {
           this.cameras.main.scrollX += panSpeed;
         }
-        if (this.cursors?.up.isDown || this.wasd?.up.isDown) {
+        if (this.cursors?.up.isDown) {
           this.cameras.main.scrollY -= panSpeed;
         }
-        if (this.cursors?.down.isDown || this.wasd?.down.isDown) {
+        if (this.cursors?.down.isDown) {
           this.cameras.main.scrollY += panSpeed;
         }
       }

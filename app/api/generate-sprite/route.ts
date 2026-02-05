@@ -87,15 +87,15 @@ ${sizeDescription}
 
 IMPORTANT: The isometric diamond base must have a 2:1 width to height ratio.`;
 
-    // Call OpenAI's image generation API (gpt-image-1.5)
-    const response = await fetch("https://api.openai.com/v1/images", {
+    // Call OpenAI's image generation API
+    const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-image-1.5",
+        model: "gpt-image-1",
         prompt: fullPrompt,
         quality: "high",
         size: "1024x1024",
@@ -104,11 +104,15 @@ IMPORTANT: The isometric diamond base must have a 2:1 width to height ratio.`;
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      return NextResponse.json(
-        { error: error.error?.message || 'Failed to generate image' },
-        { status: response.status }
-      );
+      const responseText = await response.text();
+      let errorMessage = "Failed to generate image";
+      try {
+        const errorJson = JSON.parse(responseText);
+        errorMessage = errorJson.error?.message || errorMessage;
+      } catch {
+        errorMessage = `API error: ${response.status} - ${responseText.slice(0, 200)}`;
+      }
+      return NextResponse.json({ error: errorMessage }, { status: response.status });
     }
 
     const data = await response.json();
