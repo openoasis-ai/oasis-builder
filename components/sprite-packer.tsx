@@ -67,6 +67,7 @@ export function SpritePacker({
   } | null>(null);
   const [originX, setOriginX] = useState(0.5);
   const [originY, setOriginY] = useState(0.85);
+  const [spriteScale, setSpriteScale] = useState(1.0);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
   const tilePreviewCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -136,9 +137,15 @@ export function SpritePacker({
       }
     }
 
-    // Draw anchor point indicator (small red dot at tile center)
-    const anchorScreenX = centerX;
-    const anchorScreenY = centerY - (footprintWidth + footprintHeight - 2) * (tileHeight / 4);
+    // Draw anchor point indicator at the CENTER of the multi-tile footprint
+    // For a 3x3 footprint, the center tile is (1,1), for 2x2 it's (0.5, 0.5), etc.
+    const centerTileX = (footprintWidth - 1) / 2;
+    const centerTileY = (footprintHeight - 1) / 2;
+    // Convert center tile position to isometric screen coordinates
+    const anchorIsoX = (centerTileX - centerTileY) * (tileWidth / 2);
+    const anchorIsoY = (centerTileX + centerTileY) * (tileHeight / 2);
+    const anchorScreenX = centerX + anchorIsoX;
+    const anchorScreenY = centerY + anchorIsoY - (footprintWidth + footprintHeight - 2) * (tileHeight / 4);
     ctx.fillStyle = "#ff0000";
     ctx.beginPath();
     ctx.arc(anchorScreenX, anchorScreenY, 4, 0, Math.PI * 2);
@@ -299,10 +306,11 @@ export function SpritePacker({
         // Calculate target dimensions based on footprint
         // Base tile is 132x66, but sprites can be taller
         const tileWidth = 132;
-        const targetWidth = tileWidth * footprintWidth;
-        // Scale based on trimmed width
-        const scale = targetWidth / bounds.width;
-        const targetHeight = Math.round(bounds.height * scale);
+        const baseTargetWidth = tileWidth * footprintWidth;
+        // Scale based on trimmed width, then apply user scale
+        const baseScale = baseTargetWidth / bounds.width;
+        const targetWidth = Math.round(baseTargetWidth * spriteScale);
+        const targetHeight = Math.round(bounds.height * baseScale * spriteScale);
 
         const canvas = document.createElement("canvas");
         canvas.width = targetWidth;
@@ -334,7 +342,7 @@ export function SpritePacker({
       };
       img.src = imageDataUrl;
     },
-    [footprintWidth]
+    [footprintWidth, spriteScale]
   );
 
   // Generate image with AI
@@ -384,10 +392,14 @@ export function SpritePacker({
   const handleFootprintChange = (width: number, height: number) => {
     setFootprintWidth(width);
     setFootprintHeight(height);
+  };
+
+  // Re-process when footprint or scale changes
+  useEffect(() => {
     if (generatedImage) {
       processImageForIsometric(generatedImage);
     }
-  };
+  }, [generatedImage, processImageForIsometric]);
 
   // Add asset from upload mode (PNG + XML)
   const handleAddFromUpload = async () => {
@@ -551,6 +563,7 @@ export function SpritePacker({
     setProcessedDimensions(null);
     setOriginX(0.5);
     setOriginY(0.85);
+    setSpriteScale(1.0);
   };
 
   return (
@@ -854,6 +867,32 @@ export function SpritePacker({
                       />
                     </div>
 
+                    {/* Scale Control */}
+                    <div className="mb-4">
+                      <Label className="text-xs">
+                        Scale: {spriteScale.toFixed(2)}x
+                        {processedDimensions && (
+                          <span className="ml-2 text-muted-foreground">
+                            ({processedDimensions.width}x{processedDimensions.height}px)
+                          </span>
+                        )}
+                      </Label>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="2"
+                        step="0.05"
+                        value={spriteScale}
+                        onChange={(e) => setSpriteScale(parseFloat(e.target.value))}
+                        className="w-full"
+                      />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>0.5x</span>
+                        <span>1x</span>
+                        <span>2x</span>
+                      </div>
+                    </div>
+
                     {/* Origin Controls */}
                     <div className="grid grid-cols-2 gap-4">
                       <div>
@@ -896,7 +935,7 @@ export function SpritePacker({
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      Adjust origin to align sprite with tile. The origin point on the sprite will be placed at the red crosshair (tile center).
+                      Adjust scale to resize the sprite. Adjust origin to align sprite with tile center (red crosshair).
                     </p>
                   </div>
                 )}
