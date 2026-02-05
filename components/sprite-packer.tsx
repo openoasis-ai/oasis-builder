@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,8 @@ import {
   Loader2,
   Upload,
 } from "lucide-react";
+import { processImageForIsometric } from "@/lib/image-processing";
+import { SpritePreviewCanvas } from "@/components/sprite-preview-canvas";
 
 interface SpritePackerProps {
   onAssetAdded?: () => void;
@@ -70,10 +72,8 @@ export function SpritePacker({
   const [spriteScale, setSpriteScale] = useState(1.0);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const tilePreviewCanvasRef = useRef<HTMLCanvasElement>(null);
   const xmlInputRef = useRef<HTMLInputElement>(null);
   const singleImageInputRef = useRef<HTMLInputElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Open dialog when addToAssetId is set from parent
   useEffect(() => {
@@ -83,103 +83,6 @@ export function SpritePacker({
       setMode("generate"); // Default to single image mode for adding to existing
     }
   }, [addToAssetId]);
-
-  // Draw tile preview with sprite positioned according to origin
-  useEffect(() => {
-    const canvas = tilePreviewCanvasRef.current;
-    if (!canvas || !processedImage || !processedDimensions) return;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const tileWidth = 132;
-    const tileHeight = 66;
-    const padding = 20;
-
-    // Calculate canvas size based on footprint and sprite
-    const footprintPixelWidth = tileWidth * footprintWidth;
-    const footprintPixelHeight = tileHeight * footprintHeight;
-    const canvasWidth = Math.max(footprintPixelWidth, processedDimensions.width) + padding * 2;
-    const canvasHeight = footprintPixelHeight + processedDimensions.height + padding * 2;
-
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-
-    // Clear canvas
-    ctx.fillStyle = "#87CEEB";
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-    // Calculate center position for the footprint
-    const centerX = canvasWidth / 2;
-    const centerY = canvasHeight - padding - footprintPixelHeight / 2;
-
-    // Draw isometric diamond tiles for the footprint
-    ctx.strokeStyle = "#00ff00";
-    ctx.lineWidth = 2;
-    ctx.fillStyle = "rgba(0, 255, 0, 0.2)";
-
-    for (let fx = 0; fx < footprintWidth; fx++) {
-      for (let fy = 0; fy < footprintHeight; fy++) {
-        // Calculate isometric position for each tile
-        const isoX = (fx - fy) * (tileWidth / 2);
-        const isoY = (fx + fy) * (tileHeight / 2);
-        const tileX = centerX + isoX;
-        const tileY = centerY + isoY - (footprintWidth + footprintHeight - 2) * (tileHeight / 4);
-
-        ctx.beginPath();
-        ctx.moveTo(tileX, tileY - tileHeight / 2); // top
-        ctx.lineTo(tileX + tileWidth / 2, tileY); // right
-        ctx.lineTo(tileX, tileY + tileHeight / 2); // bottom
-        ctx.lineTo(tileX - tileWidth / 2, tileY); // left
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      }
-    }
-
-    // Draw anchor point indicator at the CENTER of the multi-tile footprint
-    // For a 3x3 footprint, the center tile is (1,1), for 2x2 it's (0.5, 0.5), etc.
-    const centerTileX = (footprintWidth - 1) / 2;
-    const centerTileY = (footprintHeight - 1) / 2;
-    // Convert center tile position to isometric screen coordinates
-    const anchorIsoX = (centerTileX - centerTileY) * (tileWidth / 2);
-    const anchorIsoY = (centerTileX + centerTileY) * (tileHeight / 2);
-    const anchorScreenX = centerX + anchorIsoX;
-    const anchorScreenY = centerY + anchorIsoY - (footprintWidth + footprintHeight - 2) * (tileHeight / 4);
-    ctx.fillStyle = "#ff0000";
-    ctx.beginPath();
-    ctx.arc(anchorScreenX, anchorScreenY, 4, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Load and draw the sprite
-    const img = new window.Image();
-    img.onload = () => {
-      // Calculate sprite position based on origin
-      // Origin (0.5, 0.85) means the point at 50% width, 85% height of sprite
-      // should be at the anchor point (tile center)
-      const spriteX = anchorScreenX - processedDimensions.width * originX;
-      const spriteY = anchorScreenY - processedDimensions.height * originY;
-
-      ctx.drawImage(img, spriteX, spriteY, processedDimensions.width, processedDimensions.height);
-
-      // Redraw anchor point on top
-      ctx.fillStyle = "#ff0000";
-      ctx.beginPath();
-      ctx.arc(anchorScreenX, anchorScreenY, 4, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Draw crosshair at anchor
-      ctx.strokeStyle = "#ff0000";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(anchorScreenX - 10, anchorScreenY);
-      ctx.lineTo(anchorScreenX + 10, anchorScreenY);
-      ctx.moveTo(anchorScreenX, anchorScreenY - 10);
-      ctx.lineTo(anchorScreenX, anchorScreenY + 10);
-      ctx.stroke();
-    };
-    img.src = processedImage;
-  }, [processedImage, processedDimensions, footprintWidth, footprintHeight, originX, originY]);
 
   const handleClose = () => {
     setOpen(false);
@@ -230,7 +133,7 @@ export function SpritePacker({
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
       setGeneratedImage(dataUrl);
-      processImageForIsometric(dataUrl);
+      handleProcessImage(dataUrl);
     };
     reader.readAsDataURL(file);
 
@@ -240,110 +143,26 @@ export function SpritePacker({
     }
   };
 
-  // Trim transparent edges from an image
-  const trimTransparentEdges = (
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number
-  ): { x: number; y: number; width: number; height: number } => {
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const { data } = imageData;
-
-    let minX = width,
-      minY = height,
-      maxX = 0,
-      maxY = 0;
-
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const alpha = data[(y * width + x) * 4 + 3];
-        if (alpha > 10) {
-          // Threshold for non-transparent
-          minX = Math.min(minX, x);
-          minY = Math.min(minY, y);
-          maxX = Math.max(maxX, x);
-          maxY = Math.max(maxY, y);
-        }
-      }
-    }
-
-    // Add small padding
-    const padding = 2;
-    minX = Math.max(0, minX - padding);
-    minY = Math.max(0, minY - padding);
-    maxX = Math.min(width - 1, maxX + padding);
-    maxY = Math.min(height - 1, maxY + padding);
-
-    return {
-      x: minX,
-      y: minY,
-      width: maxX - minX + 1,
-      height: maxY - minY + 1,
-    };
-  };
-
   // Process image to fit isometric grid
-  const processImageForIsometric = useCallback(
-    (imageDataUrl: string) => {
-      const img = new Image();
-      img.onload = () => {
-        // Store original dimensions
-        setOriginalDimensions({ width: img.width, height: img.height });
-
-        // First, draw to temp canvas to trim transparent edges
-        const tempCanvas = document.createElement("canvas");
-        tempCanvas.width = img.width;
-        tempCanvas.height = img.height;
-        const tempCtx = tempCanvas.getContext("2d");
-
-        if (!tempCtx) return;
-
-        tempCtx.drawImage(img, 0, 0);
-
-        // Find the bounding box of non-transparent pixels
-        const bounds = trimTransparentEdges(tempCtx, img.width, img.height);
-
-        // Calculate target dimensions based on footprint
-        // Base tile is 132x66, but sprites can be taller
-        const tileWidth = 132;
-        const baseTargetWidth = tileWidth * footprintWidth;
-        // Scale based on trimmed width, then apply user scale
-        const baseScale = baseTargetWidth / bounds.width;
-        const targetWidth = Math.round(baseTargetWidth * spriteScale);
-        const targetHeight = Math.round(bounds.height * baseScale * spriteScale);
-
-        const canvas = document.createElement("canvas");
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
-        const ctx = canvas.getContext("2d");
-
-        if (ctx) {
-          // Enable high-quality scaling
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = "high";
-
-          // Draw only the trimmed portion, scaled to target size
-          ctx.drawImage(
-            img,
-            bounds.x,
-            bounds.y,
-            bounds.width,
-            bounds.height,
-            0,
-            0,
-            targetWidth,
-            targetHeight
-          );
-
-          const processedDataUrl = canvas.toDataURL("image/png");
-          setProcessedImage(processedDataUrl);
-          setProcessedDimensions({ width: targetWidth, height: targetHeight });
-        }
-      };
-      img.src = imageDataUrl;
-    },
-    [footprintWidth, spriteScale]
-  );
+  const handleProcessImage = async (imageDataUrl: string) => {
+    try {
+      const result = await processImageForIsometric(
+        imageDataUrl,
+        footprintWidth,
+        footprintHeight,
+        spriteScale
+      );
+      setOriginalDimensions({
+        width: result.originalWidth,
+        height: result.originalHeight,
+      });
+      setProcessedImage(result.dataUrl);
+      setProcessedDimensions({ width: result.width, height: result.height });
+    } catch (error) {
+      console.error("Error processing image:", error);
+      setError("Failed to process image");
+    }
+  };
 
   // Generate image with AI
   const handleGenerate = async () => {
@@ -375,7 +194,7 @@ export function SpritePacker({
       }
 
       setGeneratedImage(data.imageDataUrl);
-      processImageForIsometric(data.imageDataUrl);
+      handleProcessImage(data.imageDataUrl);
 
       // Auto-set asset name from prompt if not set
       if (!assetName) {
@@ -397,9 +216,10 @@ export function SpritePacker({
   // Re-process when footprint or scale changes
   useEffect(() => {
     if (generatedImage) {
-      processImageForIsometric(generatedImage);
+      handleProcessImage(generatedImage);
     }
-  }, [generatedImage, processImageForIsometric]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generatedImage, footprintWidth, footprintHeight, spriteScale]);
 
   // Add asset from upload mode (PNG + XML)
   const handleAddFromUpload = async () => {
@@ -851,94 +671,18 @@ export function SpritePacker({
                 </div>
 
                 {/* Tile Alignment Preview */}
-                {processedImage && (
-                  <div className="border-t pt-4">
-                    <Label className="text-sm font-medium mb-2 block">
-                      Tile Alignment Preview
-                      <span className="text-xs text-muted-foreground ml-2">
-                        (red crosshair = tile center anchor point)
-                      </span>
-                    </Label>
-                    <div className="flex justify-center mb-3">
-                      <canvas
-                        ref={tilePreviewCanvasRef}
-                        className="border rounded max-w-full"
-                        style={{ maxHeight: "200px", imageRendering: "pixelated" }}
-                      />
-                    </div>
-
-                    {/* Scale Control */}
-                    <div className="mb-4">
-                      <Label className="text-xs">
-                        Scale: {spriteScale.toFixed(2)}x
-                        {processedDimensions && (
-                          <span className="ml-2 text-muted-foreground">
-                            ({processedDimensions.width}x{processedDimensions.height}px)
-                          </span>
-                        )}
-                      </Label>
-                      <input
-                        type="range"
-                        min="0.5"
-                        max="2"
-                        step="0.05"
-                        value={spriteScale}
-                        onChange={(e) => setSpriteScale(parseFloat(e.target.value))}
-                        className="w-full"
-                      />
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>0.5x</span>
-                        <span>1x</span>
-                        <span>2x</span>
-                      </div>
-                    </div>
-
-                    {/* Origin Controls */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label className="text-xs">
-                          Origin X: {originX.toFixed(2)}
-                        </Label>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.01"
-                          value={originX}
-                          onChange={(e) => setOriginX(parseFloat(e.target.value))}
-                          className="w-full"
-                        />
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>Left</span>
-                          <span>Center</span>
-                          <span>Right</span>
-                        </div>
-                      </div>
-                      <div>
-                        <Label className="text-xs">
-                          Origin Y: {originY.toFixed(2)}
-                        </Label>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.01"
-                          value={originY}
-                          onChange={(e) => setOriginY(parseFloat(e.target.value))}
-                          className="w-full"
-                        />
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>Top</span>
-                          <span>Middle</span>
-                          <span>Bottom</span>
-                        </div>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Adjust scale to resize the sprite. Adjust origin to align sprite with tile center (red crosshair).
-                    </p>
-                  </div>
-                )}
+                <SpritePreviewCanvas
+                  processedImage={processedImage}
+                  processedDimensions={processedDimensions}
+                  footprintWidth={footprintWidth}
+                  footprintHeight={footprintHeight}
+                  originX={originX}
+                  originY={originY}
+                  spriteScale={spriteScale}
+                  onOriginXChange={setOriginX}
+                  onOriginYChange={setOriginY}
+                  onScaleChange={setSpriteScale}
+                />
               </div>
             )}
           </TabsContent>
