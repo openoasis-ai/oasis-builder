@@ -12,6 +12,7 @@ export interface SpriteData {
   width: number;
   height: number;
   footprint?: { width: number; height: number }; // For multi-tile support
+  origin?: { x: number; y: number }; // Anchor point (default: 0.5, 0.65 for legacy assets)
 }
 
 export interface AssetSet {
@@ -86,7 +87,7 @@ export function IsoCityGame({
       hoverSprite: Phaser.GameObjects.Image | null = null;
       hoverGraphics!: Phaser.GameObjects.Graphics;
       cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-      wasd!: any;
+      canvasFocused = false;
       lastHoverGridX = -1;
       lastHoverGridY = -1;
       assetConfigList = assetConfigs;
@@ -146,12 +147,10 @@ export function IsoCityGame({
         this.setupInput();
 
         this.cursors = this.input.keyboard!.createCursorKeys();
-        this.wasd = this.input.keyboard!.addKeys({
-          up: Phaser.Input.Keyboard.KeyCodes.W,
-          down: Phaser.Input.Keyboard.KeyCodes.S,
-          left: Phaser.Input.Keyboard.KeyCodes.A,
-          right: Phaser.Input.Keyboard.KeyCodes.D,
-        });
+
+        // Remove all key captures so they don't block input fields
+        // createCursorKeys() adds captures for arrow keys and space which we need to clear
+        this.input.keyboard!.clearCaptures();
       }
 
       parseAssetSet(config: AssetConfig) {
@@ -319,9 +318,11 @@ export function IsoCityGame({
           if (assetSet && sprite) {
             const textureKey = assetSet.textureKey;
             const tileName = sprite.name;
+            const origin = sprite.origin || { x: 0.5, y: 0.65 };
 
             if (this.hoverSprite) {
               this.hoverSprite.setTexture(textureKey, tileName);
+              this.hoverSprite.setOrigin(origin.x, origin.y);
               this.hoverSprite.setPosition(
                 isoPos.x,
                 isoPos.y - this.currentLayer * 30
@@ -334,7 +335,7 @@ export function IsoCityGame({
                 textureKey,
                 tileName
               );
-              this.hoverSprite.setOrigin(0.5, 0.65);
+              this.hoverSprite.setOrigin(origin.x, origin.y);
               this.hoverSprite.setAlpha(0.5);
               this.hoverSprite.setDepth(10000);
             }
@@ -382,14 +383,42 @@ export function IsoCityGame({
         return { gridX, gridY };
       }
 
+      // Check if user is typing in an input field
+      isUserTyping() {
+        const activeElement = document.activeElement;
+        if (!activeElement) return false;
+        const tagName = activeElement.tagName.toLowerCase();
+        return (
+          tagName === "input" ||
+          tagName === "textarea" ||
+          activeElement.getAttribute("contenteditable") === "true"
+        );
+      }
+
       setupInput() {
         // Disable right-click context menu on the game canvas
         this.game.canvas.addEventListener("contextmenu", (e) => {
           e.preventDefault();
         });
 
-        // Track space key for pan mode
+        // Track canvas focus
+        this.game.canvas.setAttribute("tabindex", "0");
+        this.game.canvas.addEventListener("focus", () => {
+          this.canvasFocused = true;
+        });
+        this.game.canvas.addEventListener("blur", () => {
+          this.canvasFocused = false;
+          this.spaceKeyDown = false;
+          this.game.canvas.style.cursor = "default";
+        });
+        // Focus canvas on click
+        this.game.canvas.addEventListener("mousedown", () => {
+          this.game.canvas.focus();
+        });
+
+        // Track space key for pan mode (only when not typing)
         this.input.keyboard!.on("keydown-SPACE", () => {
+          if (this.isUserTyping()) return;
           this.spaceKeyDown = true;
           this.game.canvas.style.cursor = "grab";
         });
@@ -476,6 +505,7 @@ export function IsoCityGame({
           if (!assetSet || !spriteData) return;
 
           const footprint = spriteData.footprint || { width: 1, height: 1 };
+          const origin = spriteData.origin || { x: 0.5, y: 0.65 };
           const textureKey = assetSet.textureKey;
           const tileName = spriteData.name;
 
@@ -518,7 +548,7 @@ export function IsoCityGame({
             textureKey,
             tileName
           );
-          sprite.setOrigin(0.5, 0.65);
+          sprite.setOrigin(origin.x, origin.y);
           // Depth based on center position
           sprite.setDepth((centerX + centerY) * 100 + this.currentLayer * 10);
 
@@ -530,6 +560,7 @@ export function IsoCityGame({
             textureKey,
             layer: this.currentLayer,
             footprint,
+            origin,
             isAnchor: true,
           });
 
@@ -546,6 +577,7 @@ export function IsoCityGame({
                 textureKey,
                 layer: this.currentLayer,
                 footprint,
+                origin,
                 isAnchor: false,
                 anchorKey,
               });
@@ -643,6 +675,14 @@ export function IsoCityGame({
             exportTile.footprint = tileData.footprint;
           }
 
+          // Include origin if it's not the default
+          if (
+            tileData.origin &&
+            (tileData.origin.x !== 0.5 || tileData.origin.y !== 0.65)
+          ) {
+            exportTile.origin = tileData.origin;
+          }
+
           mapData.push(exportTile);
         });
 
@@ -678,6 +718,7 @@ export function IsoCityGame({
           // Load tiles from JSON
           jsonData.tiles.forEach((tile: any) => {
             const footprint = tile.footprint || { width: 1, height: 1 };
+            const origin = tile.origin || { x: 0.5, y: 0.65 };
             const layer = tile.layer || 0;
 
             // Handle legacy textureKey format (convert old format to new)
@@ -702,7 +743,7 @@ export function IsoCityGame({
               textureKey,
               tile.tileName
             );
-            sprite.setOrigin(0.5, 0.65);
+            sprite.setOrigin(origin.x, origin.y);
             sprite.setDepth((centerX + centerY) * 100 + layer * 10);
 
             // Store anchor cell
@@ -713,6 +754,7 @@ export function IsoCityGame({
               textureKey,
               layer,
               footprint,
+              origin,
               isAnchor: true,
             });
 
@@ -727,6 +769,7 @@ export function IsoCityGame({
                   textureKey,
                   layer,
                   footprint,
+                  origin,
                   isAnchor: false,
                   anchorKey,
                 });
@@ -741,18 +784,21 @@ export function IsoCityGame({
       }
 
       update() {
+        // Don't handle keys when user is typing in input fields
+        if (this.isUserTyping()) return;
+
         const panSpeed = 8;
 
-        if (this.cursors?.left.isDown || this.wasd?.left.isDown) {
+        if (this.cursors?.left.isDown) {
           this.cameras.main.scrollX -= panSpeed;
         }
-        if (this.cursors?.right.isDown || this.wasd?.right.isDown) {
+        if (this.cursors?.right.isDown) {
           this.cameras.main.scrollX += panSpeed;
         }
-        if (this.cursors?.up.isDown || this.wasd?.up.isDown) {
+        if (this.cursors?.up.isDown) {
           this.cameras.main.scrollY -= panSpeed;
         }
-        if (this.cursors?.down.isDown || this.wasd?.down.isDown) {
+        if (this.cursors?.down.isDown) {
           this.cameras.main.scrollY += panSpeed;
         }
       }
@@ -841,6 +887,7 @@ export function IsoCityGame({
         width: number;
         height: number;
         footprint?: { width: number; height: number };
+        origin?: { x: number; y: number };
       }>
     ) => {
       const scene = game.scene.getScene("CityBuilder") as any;
@@ -915,6 +962,7 @@ export function IsoCityGame({
         width: number;
         height: number;
         footprint?: { width: number; height: number };
+        origin?: { x: number; y: number };
       }
     ) => {
       const scene = game.scene.getScene("CityBuilder") as any;
@@ -967,12 +1015,27 @@ export function IsoCityGame({
             height: img.height,
           };
 
-          // Remove old texture and add new one
-          scene.textures.remove(textureKey);
-
-          // Create new texture from canvas
+          // Load the new combined image FIRST, before removing old texture
+          // This prevents the glTexture crash from async gap
           const newImg = new Image();
           newImg.onload = () => {
+            // Hide/destroy hover sprite before texture manipulation
+            if (scene.hoverSprite) {
+              scene.hoverSprite.destroy();
+              scene.hoverSprite = null;
+            }
+
+            // Also temporarily hide all placed sprites using this texture
+            const spritesToRestore: Phaser.GameObjects.Image[] = [];
+            scene.cityMap.forEach((tileData: any) => {
+              if (tileData.sprite && tileData.textureKey === textureKey) {
+                tileData.sprite.setVisible(false);
+                spritesToRestore.push(tileData.sprite);
+              }
+            });
+
+            // NOW do the synchronous texture swap (no async gap)
+            scene.textures.remove(textureKey);
             scene.textures.addImage(textureKey, newImg);
             const newTexture = scene.textures.get(textureKey);
 
@@ -998,8 +1061,15 @@ export function IsoCityGame({
               newSprite.height
             );
 
+            // Restore visibility of placed sprites (they now have valid texture)
+            spritesToRestore.forEach((s) => s.setVisible(true));
+
             // Update asset set
             assetSet.sprites.push(newSprite);
+
+            // Reset hover position to force recreation of hover sprite on next move
+            scene.lastHoverGridX = -1;
+            scene.lastHoverGridY = -1;
 
             console.log(
               `Added sprite ${newSprite.name} to asset set ${assetId}`
