@@ -57,6 +57,14 @@ export function SpritePacker({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [processedImage, setProcessedImage] = useState<string | null>(null);
+  const [originalDimensions, setOriginalDimensions] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+  const [processedDimensions, setProcessedDimensions] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
   const xmlInputRef = useRef<HTMLInputElement>(null);
@@ -131,19 +139,76 @@ export function SpritePacker({
     }
   };
 
+  // Trim transparent edges from an image
+  const trimTransparentEdges = (
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ): { x: number; y: number; width: number; height: number } => {
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const { data } = imageData;
+
+    let minX = width,
+      minY = height,
+      maxX = 0,
+      maxY = 0;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const alpha = data[(y * width + x) * 4 + 3];
+        if (alpha > 10) {
+          // Threshold for non-transparent
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+        }
+      }
+    }
+
+    // Add small padding
+    const padding = 2;
+    minX = Math.max(0, minX - padding);
+    minY = Math.max(0, minY - padding);
+    maxX = Math.min(width - 1, maxX + padding);
+    maxY = Math.min(height - 1, maxY + padding);
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+    };
+  };
+
   // Process image to fit isometric grid
   const processImageForIsometric = useCallback(
     (imageDataUrl: string) => {
       const img = new Image();
       img.onload = () => {
+        // Store original dimensions
+        setOriginalDimensions({ width: img.width, height: img.height });
+
+        // First, draw to temp canvas to trim transparent edges
+        const tempCanvas = document.createElement("canvas");
+        tempCanvas.width = img.width;
+        tempCanvas.height = img.height;
+        const tempCtx = tempCanvas.getContext("2d");
+
+        if (!tempCtx) return;
+
+        tempCtx.drawImage(img, 0, 0);
+
+        // Find the bounding box of non-transparent pixels
+        const bounds = trimTransparentEdges(tempCtx, img.width, img.height);
+
         // Calculate target dimensions based on footprint
         // Base tile is 132x66, but sprites can be taller
         const tileWidth = 132;
-        const tileHeight = 66;
         const targetWidth = tileWidth * footprintWidth;
-        // Height can be taller - we scale to fit width and let height be proportional
-        const scale = targetWidth / img.width;
-        const targetHeight = Math.round(img.height * scale);
+        // Scale based on trimmed width
+        const scale = targetWidth / bounds.width;
+        const targetHeight = Math.round(bounds.height * scale);
 
         const canvas = document.createElement("canvas");
         canvas.width = targetWidth;
@@ -155,11 +220,22 @@ export function SpritePacker({
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = "high";
 
-          // Draw the scaled image
-          ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+          // Draw only the trimmed portion, scaled to target size
+          ctx.drawImage(
+            img,
+            bounds.x,
+            bounds.y,
+            bounds.width,
+            bounds.height,
+            0,
+            0,
+            targetWidth,
+            targetHeight
+          );
 
           const processedDataUrl = canvas.toDataURL("image/png");
           setProcessedImage(processedDataUrl);
+          setProcessedDimensions({ width: targetWidth, height: targetHeight });
         }
       };
       img.src = imageDataUrl;
@@ -374,6 +450,8 @@ export function SpritePacker({
     setFootprintHeight(1);
     setGeneratedImage(null);
     setProcessedImage(null);
+    setOriginalDimensions(null);
+    setProcessedDimensions(null);
   };
 
   return (
@@ -624,6 +702,11 @@ export function SpritePacker({
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">
                         Original
+                        {originalDimensions && (
+                          <span className="ml-1 text-primary">
+                            ({originalDimensions.width}x{originalDimensions.height})
+                          </span>
+                        )}
                       </p>
                       <img
                         src={generatedImage}
@@ -637,6 +720,11 @@ export function SpritePacker({
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">
                         Processed ({footprintWidth}x{footprintHeight} tiles)
+                        {processedDimensions && (
+                          <span className="ml-1 text-primary">
+                            ({processedDimensions.width}x{processedDimensions.height})
+                          </span>
+                        )}
                       </p>
                       <div className="relative inline-block">
                         <img

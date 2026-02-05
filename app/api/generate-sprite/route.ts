@@ -7,11 +7,8 @@ const ICON_STYLE_JSON = {
       proportions:
         "1:1 ratio canvas, with objects fitting comfortably within margins",
       element_arrangement:
-        "central dominant object, with supporting elements symmetrically or diagonally placed",
-      base_alignment:
-        "base of building should be visible and align with isometric diamond grid",
-      diamond_base_ratio:
-        "2:1 width to height ratio for the isometric diamond base (e.g., 132px wide x 66px tall)",
+        "central dominant object, vertically centered in canvas",
+      ground_base: "DO NOT include any ground, grass, floor, platform, or isometric diamond base - the object should float on transparent background",
     },
     composition: {
       element_count: "2-4 main architectural elements",
@@ -85,7 +82,7 @@ ${JSON.stringify(ICON_STYLE_JSON, null, 2)}
 
 ${sizeDescription}
 
-IMPORTANT: The isometric diamond base must have a 2:1 width to height ratio.`;
+CRITICAL: Do NOT include any ground, grass, dirt, platform, or isometric diamond base. The object should be rendered alone on a completely transparent background, as if floating. The game will place this sprite on its own grid tiles.`;
 
     // Call OpenAI's image generation API
     const response = await fetch("https://api.openai.com/v1/images/generations", {
