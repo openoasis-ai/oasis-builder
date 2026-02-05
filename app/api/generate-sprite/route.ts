@@ -10,6 +10,8 @@ const ICON_STYLE_JSON = {
         "central dominant object, with supporting elements symmetrically or diagonally placed",
       base_alignment:
         "base of building should be visible and align with isometric diamond grid",
+      diamond_base_ratio:
+        "2:1 width to height ratio for the isometric diamond base (e.g., 132px wide x 66px tall)",
     },
     composition: {
       element_count: "2-4 main architectural elements",
@@ -81,21 +83,23 @@ export async function POST(request: NextRequest) {
     const fullPrompt = `Generate a "${prompt}" icon with this json style:
 ${JSON.stringify(ICON_STYLE_JSON, null, 2)}
 
-${sizeDescription}`;
+${sizeDescription}
 
-    // Call OpenAI's image generation API
-    const response = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
+IMPORTANT: The isometric diamond base must have a 2:1 width to height ratio.`;
+
+    // Call OpenAI's image generation API (gpt-image-1.5)
+    const response = await fetch("https://api.openai.com/v1/images", {
+      method: "POST",
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: 'dall-e-3',
+        model: "gpt-image-1.5",
         prompt: fullPrompt,
-        n: 1,
-        size: '1024x1024',
-        response_format: 'b64_json',
+        quality: "high",
+        size: "1024x1024",
+        background: "transparent",
       }),
     });
 
