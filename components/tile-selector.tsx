@@ -211,6 +211,15 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
           </div>
         </div>
 
+        {/* Info */}
+        <div className="p-2 bg-blue-50 dark:bg-blue-950 rounded-md text-xs">
+          <p className="font-medium mb-1">📐 Tile Config</p>
+          <p className="text-muted-foreground">
+            Current: 132x66 (2:1 ratio)<br/>
+            See <code className="bg-muted px-1 rounded">ASSET_GUIDE.md</code> to customize
+          </p>
+        </div>
+
         {/* Tabs for Tiles, Details, and Buildings */}
         <Tabs defaultValue="tiles" className="flex-1 flex flex-col overflow-hidden">
           <TabsList className="grid w-full grid-cols-3">
