@@ -12,6 +12,7 @@ export interface SpriteData {
   width: number;
   height: number;
   footprint?: { width: number; height: number }; // For multi-tile support
+  origin?: { x: number; y: number }; // Anchor point (default: 0.5, 0.65 for legacy assets)
 }
 
 export interface AssetSet {
@@ -317,9 +318,11 @@ export function IsoCityGame({
           if (assetSet && sprite) {
             const textureKey = assetSet.textureKey;
             const tileName = sprite.name;
+            const origin = sprite.origin || { x: 0.5, y: 0.65 };
 
             if (this.hoverSprite) {
               this.hoverSprite.setTexture(textureKey, tileName);
+              this.hoverSprite.setOrigin(origin.x, origin.y);
               this.hoverSprite.setPosition(
                 isoPos.x,
                 isoPos.y - this.currentLayer * 30
@@ -332,7 +335,7 @@ export function IsoCityGame({
                 textureKey,
                 tileName
               );
-              this.hoverSprite.setOrigin(0.5, 0.65);
+              this.hoverSprite.setOrigin(origin.x, origin.y);
               this.hoverSprite.setAlpha(0.5);
               this.hoverSprite.setDepth(10000);
             }
@@ -502,6 +505,7 @@ export function IsoCityGame({
           if (!assetSet || !spriteData) return;
 
           const footprint = spriteData.footprint || { width: 1, height: 1 };
+          const origin = spriteData.origin || { x: 0.5, y: 0.65 };
           const textureKey = assetSet.textureKey;
           const tileName = spriteData.name;
 
@@ -544,7 +548,7 @@ export function IsoCityGame({
             textureKey,
             tileName
           );
-          sprite.setOrigin(0.5, 0.65);
+          sprite.setOrigin(origin.x, origin.y);
           // Depth based on center position
           sprite.setDepth((centerX + centerY) * 100 + this.currentLayer * 10);
 
@@ -556,6 +560,7 @@ export function IsoCityGame({
             textureKey,
             layer: this.currentLayer,
             footprint,
+            origin,
             isAnchor: true,
           });
 
@@ -572,6 +577,7 @@ export function IsoCityGame({
                 textureKey,
                 layer: this.currentLayer,
                 footprint,
+                origin,
                 isAnchor: false,
                 anchorKey,
               });
@@ -669,6 +675,14 @@ export function IsoCityGame({
             exportTile.footprint = tileData.footprint;
           }
 
+          // Include origin if it's not the default
+          if (
+            tileData.origin &&
+            (tileData.origin.x !== 0.5 || tileData.origin.y !== 0.65)
+          ) {
+            exportTile.origin = tileData.origin;
+          }
+
           mapData.push(exportTile);
         });
 
@@ -704,6 +718,7 @@ export function IsoCityGame({
           // Load tiles from JSON
           jsonData.tiles.forEach((tile: any) => {
             const footprint = tile.footprint || { width: 1, height: 1 };
+            const origin = tile.origin || { x: 0.5, y: 0.65 };
             const layer = tile.layer || 0;
 
             // Handle legacy textureKey format (convert old format to new)
@@ -728,7 +743,7 @@ export function IsoCityGame({
               textureKey,
               tile.tileName
             );
-            sprite.setOrigin(0.5, 0.65);
+            sprite.setOrigin(origin.x, origin.y);
             sprite.setDepth((centerX + centerY) * 100 + layer * 10);
 
             // Store anchor cell
@@ -739,6 +754,7 @@ export function IsoCityGame({
               textureKey,
               layer,
               footprint,
+              origin,
               isAnchor: true,
             });
 
@@ -753,6 +769,7 @@ export function IsoCityGame({
                   textureKey,
                   layer,
                   footprint,
+                  origin,
                   isAnchor: false,
                   anchorKey,
                 });
@@ -870,6 +887,7 @@ export function IsoCityGame({
         width: number;
         height: number;
         footprint?: { width: number; height: number };
+        origin?: { x: number; y: number };
       }>
     ) => {
       const scene = game.scene.getScene("CityBuilder") as any;
@@ -944,6 +962,7 @@ export function IsoCityGame({
         width: number;
         height: number;
         footprint?: { width: number; height: number };
+        origin?: { x: number; y: number };
       }
     ) => {
       const scene = game.scene.getScene("CityBuilder") as any;

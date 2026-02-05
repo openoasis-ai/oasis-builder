@@ -382,6 +382,8 @@ export function SpritePacker({
           footprintWidth > 1 || footprintHeight > 1
             ? { width: footprintWidth, height: footprintHeight }
             : undefined,
+        // Generated sprites have anchor at bottom center (base of object)
+        origin: { x: 0.5, y: 1.0 },
       },
     ];
 
@@ -399,6 +401,7 @@ export function SpritePacker({
       width: number;
       height: number;
       footprint?: { width: number; height: number };
+      origin?: { x: number; y: number };
     }>
   ) => {
     // If adding to existing asset, use the add sprite function
