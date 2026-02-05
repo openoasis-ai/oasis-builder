@@ -65,8 +65,11 @@ export function SpritePacker({
     width: number;
     height: number;
   } | null>(null);
+  const [originX, setOriginX] = useState(0.5);
+  const [originY, setOriginY] = useState(0.85);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const tilePreviewCanvasRef = useRef<HTMLCanvasElement>(null);
   const xmlInputRef = useRef<HTMLInputElement>(null);
   const singleImageInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -79,6 +82,97 @@ export function SpritePacker({
       setMode("generate"); // Default to single image mode for adding to existing
     }
   }, [addToAssetId]);
+
+  // Draw tile preview with sprite positioned according to origin
+  useEffect(() => {
+    const canvas = tilePreviewCanvasRef.current;
+    if (!canvas || !processedImage || !processedDimensions) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const tileWidth = 132;
+    const tileHeight = 66;
+    const padding = 20;
+
+    // Calculate canvas size based on footprint and sprite
+    const footprintPixelWidth = tileWidth * footprintWidth;
+    const footprintPixelHeight = tileHeight * footprintHeight;
+    const canvasWidth = Math.max(footprintPixelWidth, processedDimensions.width) + padding * 2;
+    const canvasHeight = footprintPixelHeight + processedDimensions.height + padding * 2;
+
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+
+    // Clear canvas
+    ctx.fillStyle = "#87CEEB";
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    // Calculate center position for the footprint
+    const centerX = canvasWidth / 2;
+    const centerY = canvasHeight - padding - footprintPixelHeight / 2;
+
+    // Draw isometric diamond tiles for the footprint
+    ctx.strokeStyle = "#00ff00";
+    ctx.lineWidth = 2;
+    ctx.fillStyle = "rgba(0, 255, 0, 0.2)";
+
+    for (let fx = 0; fx < footprintWidth; fx++) {
+      for (let fy = 0; fy < footprintHeight; fy++) {
+        // Calculate isometric position for each tile
+        const isoX = (fx - fy) * (tileWidth / 2);
+        const isoY = (fx + fy) * (tileHeight / 2);
+        const tileX = centerX + isoX;
+        const tileY = centerY + isoY - (footprintWidth + footprintHeight - 2) * (tileHeight / 4);
+
+        ctx.beginPath();
+        ctx.moveTo(tileX, tileY - tileHeight / 2); // top
+        ctx.lineTo(tileX + tileWidth / 2, tileY); // right
+        ctx.lineTo(tileX, tileY + tileHeight / 2); // bottom
+        ctx.lineTo(tileX - tileWidth / 2, tileY); // left
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
+    // Draw anchor point indicator (small red dot at tile center)
+    const anchorScreenX = centerX;
+    const anchorScreenY = centerY - (footprintWidth + footprintHeight - 2) * (tileHeight / 4);
+    ctx.fillStyle = "#ff0000";
+    ctx.beginPath();
+    ctx.arc(anchorScreenX, anchorScreenY, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Load and draw the sprite
+    const img = new window.Image();
+    img.onload = () => {
+      // Calculate sprite position based on origin
+      // Origin (0.5, 0.85) means the point at 50% width, 85% height of sprite
+      // should be at the anchor point (tile center)
+      const spriteX = anchorScreenX - processedDimensions.width * originX;
+      const spriteY = anchorScreenY - processedDimensions.height * originY;
+
+      ctx.drawImage(img, spriteX, spriteY, processedDimensions.width, processedDimensions.height);
+
+      // Redraw anchor point on top
+      ctx.fillStyle = "#ff0000";
+      ctx.beginPath();
+      ctx.arc(anchorScreenX, anchorScreenY, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw crosshair at anchor
+      ctx.strokeStyle = "#ff0000";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(anchorScreenX - 10, anchorScreenY);
+      ctx.lineTo(anchorScreenX + 10, anchorScreenY);
+      ctx.moveTo(anchorScreenX, anchorScreenY - 10);
+      ctx.lineTo(anchorScreenX, anchorScreenY + 10);
+      ctx.stroke();
+    };
+    img.src = processedImage;
+  }, [processedImage, processedDimensions, footprintWidth, footprintHeight, originX, originY]);
 
   const handleClose = () => {
     setOpen(false);
@@ -382,8 +476,8 @@ export function SpritePacker({
           footprintWidth > 1 || footprintHeight > 1
             ? { width: footprintWidth, height: footprintHeight }
             : undefined,
-        // Generated sprites: anchor at ~85% down (typical isometric ground contact point)
-        origin: { x: 0.5, y: 0.85 },
+        // Use the user-adjusted origin values
+        origin: { x: originX, y: originY },
       },
     ];
 
@@ -455,6 +549,8 @@ export function SpritePacker({
     setProcessedImage(null);
     setOriginalDimensions(null);
     setProcessedDimensions(null);
+    setOriginX(0.5);
+    setOriginY(0.85);
   };
 
   return (
@@ -696,8 +792,8 @@ export function SpritePacker({
 
             {/* Preview */}
             {(generatedImage || processedImage) && (
-              <div className="border rounded-lg p-4">
-                <Label className="text-sm font-medium mb-2 block">
+              <div className="border rounded-lg p-4 space-y-4">
+                <Label className="text-sm font-medium block">
                   Preview
                 </Label>
                 <div className="grid grid-cols-2 gap-4">
@@ -714,7 +810,7 @@ export function SpritePacker({
                       <img
                         src={generatedImage}
                         alt="Generated"
-                        className="max-h-40 mx-auto border rounded"
+                        className="max-h-32 mx-auto border rounded"
                         style={{ imageRendering: "pixelated" }}
                       />
                     </div>
@@ -733,13 +829,77 @@ export function SpritePacker({
                         <img
                           src={processedImage}
                           alt="Processed"
-                          className="max-h-40 mx-auto border rounded"
+                          className="max-h-32 mx-auto border rounded"
                           style={{ imageRendering: "pixelated" }}
                         />
                       </div>
                     </div>
                   )}
                 </div>
+
+                {/* Tile Alignment Preview */}
+                {processedImage && (
+                  <div className="border-t pt-4">
+                    <Label className="text-sm font-medium mb-2 block">
+                      Tile Alignment Preview
+                      <span className="text-xs text-muted-foreground ml-2">
+                        (red crosshair = tile center anchor point)
+                      </span>
+                    </Label>
+                    <div className="flex justify-center mb-3">
+                      <canvas
+                        ref={tilePreviewCanvasRef}
+                        className="border rounded max-w-full"
+                        style={{ maxHeight: "200px", imageRendering: "pixelated" }}
+                      />
+                    </div>
+
+                    {/* Origin Controls */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-xs">
+                          Origin X: {originX.toFixed(2)}
+                        </Label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={originX}
+                          onChange={(e) => setOriginX(parseFloat(e.target.value))}
+                          className="w-full"
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>Left</span>
+                          <span>Center</span>
+                          <span>Right</span>
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="text-xs">
+                          Origin Y: {originY.toFixed(2)}
+                        </Label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={originY}
+                          onChange={(e) => setOriginY(parseFloat(e.target.value))}
+                          className="w-full"
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>Top</span>
+                          <span>Middle</span>
+                          <span>Bottom</span>
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Adjust origin to align sprite with tile. The origin point on the sprite will be placed at the red crosshair (tile center).
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </TabsContent>
