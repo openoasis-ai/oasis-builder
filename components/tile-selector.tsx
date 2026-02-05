@@ -16,23 +16,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { SpritePacker } from "./sprite-packer";
-
-interface SpriteData {
-  name: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  footprint?: { width: number; height: number };
-}
-
-interface AssetSet {
-  id: string;
-  name: string;
-  textureKey: string;
-  xmlKey: string;
-  sprites: SpriteData[];
-}
+import { SpriteData, AssetSet } from "@/lib/game-types";
 
 interface AssetSetWithPreviews extends AssetSet {
   previews: string[];
