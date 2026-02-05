@@ -382,8 +382,8 @@ export function SpritePacker({
           footprintWidth > 1 || footprintHeight > 1
             ? { width: footprintWidth, height: footprintHeight }
             : undefined,
-        // Generated sprites have anchor at bottom center (base of object)
-        origin: { x: 0.5, y: 1.0 },
+        // Generated sprites: anchor at ~85% down (typical isometric ground contact point)
+        origin: { x: 0.5, y: 0.85 },
       },
     ];
 

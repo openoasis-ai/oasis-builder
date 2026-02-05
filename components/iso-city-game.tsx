@@ -1015,18 +1015,27 @@ export function IsoCityGame({
             height: img.height,
           };
 
-          // Hide/destroy hover sprite before texture manipulation to prevent glTexture errors
-          if (scene.hoverSprite) {
-            scene.hoverSprite.destroy();
-            scene.hoverSprite = null;
-          }
-
-          // Remove old texture and add new one
-          scene.textures.remove(textureKey);
-
-          // Create new texture from canvas
+          // Load the new combined image FIRST, before removing old texture
+          // This prevents the glTexture crash from async gap
           const newImg = new Image();
           newImg.onload = () => {
+            // Hide/destroy hover sprite before texture manipulation
+            if (scene.hoverSprite) {
+              scene.hoverSprite.destroy();
+              scene.hoverSprite = null;
+            }
+
+            // Also temporarily hide all placed sprites using this texture
+            const spritesToRestore: Phaser.GameObjects.Image[] = [];
+            scene.cityMap.forEach((tileData: any) => {
+              if (tileData.sprite && tileData.textureKey === textureKey) {
+                tileData.sprite.setVisible(false);
+                spritesToRestore.push(tileData.sprite);
+              }
+            });
+
+            // NOW do the synchronous texture swap (no async gap)
+            scene.textures.remove(textureKey);
             scene.textures.addImage(textureKey, newImg);
             const newTexture = scene.textures.get(textureKey);
 
@@ -1051,6 +1060,9 @@ export function IsoCityGame({
               newSprite.width,
               newSprite.height
             );
+
+            // Restore visibility of placed sprites (they now have valid texture)
+            spritesToRestore.forEach((s) => s.setVisible(true));
 
             // Update asset set
             assetSet.sprites.push(newSprite);
