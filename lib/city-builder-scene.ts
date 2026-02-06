@@ -45,7 +45,7 @@ export class CityBuilder extends Phaser.Scene {
 
   constructor(config: CityBuilderConfig) {
     super({ key: "CityBuilder" });
-    this.gridSize = config.gridSize ?? 60;
+    this.gridSize = config.gridSize ?? 50;
     this.tileWidth = config.tileWidth;
     this.tileHeight = config.tileHeight;
     this.originOffsetX = (this.gridSize * this.tileWidth) / 2;
@@ -87,7 +87,7 @@ export class CityBuilder extends Phaser.Scene {
     }
 
     this.cameras.main.setBackgroundColor("rgba(0,0,0,0)");
-    this.cameras.main.zoom = 0.3; // Start more zoomed out
+    this.cameras.main.zoom = 0.2; // Start more zoomed out
 
     const centerX = this.originOffsetX;
     const centerY = (this.gridSize * this.tileHeight) / 2;
@@ -95,7 +95,13 @@ export class CityBuilder extends Phaser.Scene {
 
     this.gridGraphics = this.add.graphics();
     this.gridGraphics.setDepth(-1);
+
+    // Draw grid immediately and again after camera settles to ensure full visibility
     this.drawVisibleGrid();
+    this.time.delayedCall(100, () => {
+      this.drawVisibleGrid();
+    });
+
     this.hoverGraphics = this.add.graphics();
     this.hoverGraphics.setDepth(9999); // Keep hover above everything except preview sprite
 

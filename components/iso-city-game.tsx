@@ -22,7 +22,7 @@ export function IsoCityGame({
   onGridPositionChange,
   tileWidth: propTileWidth = 132,
   tileHeight: propTileHeight = 66,
-  gridSize: propGridSize = 30,
+  gridSize: propGridSize = 50,
   assetConfigs = DEFAULT_ASSET_CONFIGS,
 }: IsoCityGameProps) {
   const gameRef = useRef<HTMLDivElement>(null);
@@ -132,7 +132,7 @@ export function IsoCityGame({
       if (scene) {
         return scene.gridSize;
       }
-      return 30;
+      return 50;
     };
 
     // Add custom asset set at runtime

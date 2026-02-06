@@ -68,7 +68,7 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [addToAssetId, setAddToAssetId] = useState<string | null>(null);
   const [gridVisible, setGridVisible] = useState(true);
-  const [gridSize, setGridSize] = useState(60);
+  const [gridSize, setGridSize] = useState(50);
   const [newTabDialogOpen, setNewTabDialogOpen] = useState(false);
   const [newTabName, setNewTabName] = useState("");
   const [contextMenu, setContextMenu] = useState<{
@@ -486,9 +486,11 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
                               });
                             }}
                             title={
-                              sprite?.footprint
-                                ? `${sprite.footprint.width}x${sprite.footprint.height}`
-                                : "1x1"
+                              sprite?.name
+                                ? `${sprite.name} (${sprite.footprint ? `${sprite.footprint.width}x${sprite.footprint.height}` : "1x1"})`
+                                : sprite?.footprint
+                                  ? `${sprite.footprint.width}x${sprite.footprint.height}`
+                                  : "1x1"
                             }
                           >
                             {preview && (
