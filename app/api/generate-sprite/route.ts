@@ -94,7 +94,7 @@ CRITICAL: Do NOT include any ground, grass, dirt, platform, or isometric diamond
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-image-1.5",
+        model: "gpt-image-1",
         prompt: fullPrompt,
         quality: "high",
         size: "1024x1024",
