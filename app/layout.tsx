@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "🌴 Oasis Builder",
+  title: "Oasis Builder 🌴",
   description: "A modern isometric city builder from Open Oasis",
 };
 

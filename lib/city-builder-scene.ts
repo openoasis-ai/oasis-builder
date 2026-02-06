@@ -45,7 +45,7 @@ export class CityBuilder extends Phaser.Scene {
 
   constructor(config: CityBuilderConfig) {
     super({ key: "CityBuilder" });
-    this.gridSize = config.gridSize ?? 60;
+    this.gridSize = config.gridSize ?? 50;
     this.tileWidth = config.tileWidth;
     this.tileHeight = config.tileHeight;
     this.originOffsetX = (this.gridSize * this.tileWidth) / 2;
@@ -75,7 +75,7 @@ export class CityBuilder extends Phaser.Scene {
     });
   }
 
-  create() {
+  async create() {
     // Parse all configured asset sets
     this.assetConfigList.forEach((config) => {
       this.parseAssetSet(config);
@@ -86,8 +86,9 @@ export class CityBuilder extends Phaser.Scene {
       this.selectedAssetSetId = this.assetConfigList[0].id;
     }
 
+    // Initialize graphics and camera BEFORE async operations
     this.cameras.main.setBackgroundColor("rgba(0,0,0,0)");
-    this.cameras.main.zoom = 0.3; // Start more zoomed out
+    this.cameras.main.zoom = 0.2; // Start more zoomed out
 
     const centerX = this.originOffsetX;
     const centerY = (this.gridSize * this.tileHeight) / 2;
@@ -95,7 +96,7 @@ export class CityBuilder extends Phaser.Scene {
 
     this.gridGraphics = this.add.graphics();
     this.gridGraphics.setDepth(-1);
-    this.drawVisibleGrid();
+
     this.hoverGraphics = this.add.graphics();
     this.hoverGraphics.setDepth(9999); // Keep hover above everything except preview sprite
 
@@ -106,6 +107,16 @@ export class CityBuilder extends Phaser.Scene {
     // Remove all key captures so they don't block input fields
     // createCursorKeys() adds captures for arrow keys and space which we need to clear
     this.input.keyboard!.clearCaptures();
+
+    // Load the oasis map first, then prefill empty cells with grass
+    await this.loadOasisMap();
+    this.prefillMapWithGrass();
+
+    // Draw grid after everything is loaded
+    this.drawVisibleGrid();
+    this.time.delayedCall(100, () => {
+      this.drawVisibleGrid();
+    });
   }
 
   parseAssetSet(config: AssetConfig) {
@@ -192,6 +203,75 @@ export class CityBuilder extends Phaser.Scene {
         detail: { assetSet },
       })
     );
+  }
+
+  prefillMapWithGrass() {
+    const floorsAssetSet = this.assetSets.get("floors");
+    if (!floorsAssetSet) {
+      console.warn("Floors asset set not found, skipping prefill");
+      return;
+    }
+
+    // Find grass_02_11 sprite (try with and without .png extension)
+    const grassSprite = floorsAssetSet.sprites.find(
+      (s) => s.name === "grass_02_11"
+    );
+    if (!grassSprite) {
+      console.warn("grass_02_11 not found in floors asset set. Available sprites:", floorsAssetSet.sprites.map(s => s.name));
+      return;
+    }
+
+    const textureKey = floorsAssetSet.textureKey;
+    const tileName = grassSprite.name;
+    const footprint = grassSprite.footprint || { width: 1, height: 1 };
+    const origin = grassSprite.origin || { x: 0.5, y: 0.5 };
+
+    let filledCount = 0;
+    // Fill only empty cells with grass tiles
+    for (let gridY = 0; gridY < this.gridSize; gridY++) {
+      for (let gridX = 0; gridX < this.gridSize; gridX++) {
+        const key = `${gridX},${gridY},0`;
+
+        // Skip if this cell already has a tile
+        if (this.cityMap.has(key)) {
+          continue;
+        }
+
+        const isoPos = this.gridToIso(gridX, gridY);
+        const sprite = this.add.image(isoPos.x, isoPos.y, textureKey, tileName);
+        sprite.setOrigin(origin.x, origin.y);
+        sprite.setDepth((gridX + gridY) * 100);
+
+        this.cityMap.set(key, {
+          sprite,
+          tileName,
+          textureKey,
+          layer: 0,
+          footprint,
+          origin,
+          isAnchor: true,
+        });
+        filledCount++;
+      }
+    }
+
+    console.log(`Prefilled ${filledCount} empty cells with grass_02_11 tiles`);
+  }
+
+  async loadOasisMap() {
+    try {
+      const response = await fetch("/oasis-map.json");
+      if (!response.ok) {
+        console.log("No oasis-map.json found, skipping");
+        return;
+      }
+      const mapData = await response.json();
+      console.log("Loading oasis map on top of grass prefill...");
+      await this.loadMap(mapData);
+      console.log("Oasis map loaded successfully");
+    } catch (error) {
+      console.warn("Failed to load oasis-map.json:", error);
+    }
   }
 
   drawVisibleGrid() {
