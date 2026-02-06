@@ -45,7 +45,7 @@ export class CityBuilder extends Phaser.Scene {
 
   constructor(config: CityBuilderConfig) {
     super({ key: "CityBuilder" });
-    this.gridSize = config.gridSize ?? 30;
+    this.gridSize = config.gridSize ?? 60;
     this.tileWidth = config.tileWidth;
     this.tileHeight = config.tileHeight;
     this.originOffsetX = (this.gridSize * this.tileWidth) / 2;
@@ -87,7 +87,7 @@ export class CityBuilder extends Phaser.Scene {
     }
 
     this.cameras.main.setBackgroundColor("rgba(0,0,0,0)");
-    this.cameras.main.zoom = 0.6; // Start more zoomed out
+    this.cameras.main.zoom = 0.3; // Start more zoomed out
 
     const centerX = this.originOffsetX;
     const centerY = (this.gridSize * this.tileHeight) / 2;
@@ -144,9 +144,9 @@ export class CityBuilder extends Phaser.Scene {
       const footprint =
         footprintWidth && footprintHeight
           ? {
-              width: parseInt(footprintWidth),
-              height: parseInt(footprintHeight),
-            }
+            width: parseInt(footprintWidth),
+            height: parseInt(footprintHeight),
+          }
           : undefined;
 
       // Support for custom origin in XML (optional attributes)
@@ -155,9 +155,9 @@ export class CityBuilder extends Phaser.Scene {
       const origin =
         originX && originY
           ? {
-              x: parseFloat(originX),
-              y: parseFloat(originY),
-            }
+            x: parseFloat(originX),
+            y: parseFloat(originY),
+          }
           : undefined;
 
       sourceTexture.add(name, 0, x, y, width, height);
@@ -353,12 +353,12 @@ export class CityBuilder extends Phaser.Scene {
     const gridX = Math.floor(
       (adjustedX / (this.tileWidth / 2) +
         adjustedY / (this.tileHeight / 2)) /
-        2
+      2
     );
     const gridY = Math.floor(
       (adjustedY / (this.tileHeight / 2) -
         adjustedX / (this.tileWidth / 2)) /
-        2
+      2
     );
 
     return { gridX, gridY };
@@ -460,7 +460,7 @@ export class CityBuilder extends Phaser.Scene {
         const zoomAmount = deltaY > 0 ? -0.03 : 0.03;
         const newZoom = Phaser.Math.Clamp(
           this.cameras.main.zoom + zoomAmount,
-          0.3,
+          0.15,
           2
         );
         this.cameras.main.zoom = newZoom;

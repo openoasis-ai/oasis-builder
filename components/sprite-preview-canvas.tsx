@@ -123,7 +123,7 @@ export function SpritePreviewCanvas({
         spriteX,
         spriteY,
         processedDimensions.width,
-        processedDimensions.height
+        processedDimensions.height,
       );
 
       // Redraw anchor point on top
@@ -184,7 +184,7 @@ export function SpritePreviewCanvas({
         </Label>
         <input
           type="range"
-          min="0.5"
+          min="0.1"
           max="2"
           step="0.05"
           value={spriteScale}

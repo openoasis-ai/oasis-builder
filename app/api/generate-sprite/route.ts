@@ -58,16 +58,18 @@ export async function POST(request: NextRequest) {
       prompt,
       footprintWidth = 1,
       footprintHeight = 1,
+      apiKey: providedApiKey,
     } = await request.json();
 
-    const apiKey = process.env.OPENAI_API_KEY;
+    // Use provided API key from request, fallback to environment variable
+    const apiKey = providedApiKey || process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
         {
           error:
-            "OpenAI API key not configured. Set OPENAI_API_KEY environment variable.",
+            "OpenAI API key not provided. Please set your API key in the UI or configure OPENAI_API_KEY environment variable.",
         },
-        { status: 500 }
+        { status: 400 }
       );
     }
 
@@ -92,7 +94,7 @@ CRITICAL: Do NOT include any ground, grass, dirt, platform, or isometric diamond
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-image-1",
+        model: "gpt-image-1.5",
         prompt: fullPrompt,
         quality: "high",
         size: "1024x1024",

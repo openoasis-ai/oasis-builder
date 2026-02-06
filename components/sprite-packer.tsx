@@ -70,10 +70,20 @@ export function SpritePacker({
   const [originX, setOriginX] = useState(0.5);
   const [originY, setOriginY] = useState(0.85);
   const [spriteScale, setSpriteScale] = useState(1.0);
+  const [apiKey, setApiKey] = useState("");
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
   const xmlInputRef = useRef<HTMLInputElement>(null);
   const singleImageInputRef = useRef<HTMLInputElement>(null);
+
+  // Load API key from localStorage on mount
+  useEffect(() => {
+    const savedKey = localStorage.getItem("openai_api_key");
+    if (savedKey) {
+      setApiKey(savedKey);
+    }
+  }, []);
 
   // Open dialog when addToAssetId is set from parent
   useEffect(() => {
@@ -164,10 +174,32 @@ export function SpritePacker({
     }
   };
 
+  // Save API key to localStorage
+  const handleSaveApiKey = () => {
+    if (apiKey.trim()) {
+      localStorage.setItem("openai_api_key", apiKey.trim());
+      setShowApiKeyInput(false);
+      setError(null);
+    }
+  };
+
+  // Clear API key
+  const handleClearApiKey = () => {
+    localStorage.removeItem("openai_api_key");
+    setApiKey("");
+    setShowApiKeyInput(false);
+  };
+
   // Generate image with AI
   const handleGenerate = async () => {
     if (!generatePrompt.trim()) {
       setError("Please enter a prompt");
+      return;
+    }
+
+    if (!apiKey.trim()) {
+      setError("Please provide an OpenAI API key");
+      setShowApiKeyInput(true);
       return;
     }
 
@@ -184,6 +216,7 @@ export function SpritePacker({
           prompt: generatePrompt,
           footprintWidth,
           footprintHeight,
+          apiKey: apiKey.trim(),
         }),
       });
 
@@ -565,9 +598,50 @@ export function SpritePacker({
             </div>
 
             <div className="border rounded-lg p-4 space-y-3">
-              <Label className="text-sm font-medium">
-                Option 1: Generate with AI
-              </Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">
+                  Option 1: Generate with AI
+                </Label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowApiKeyInput(!showApiKeyInput)}
+                  className="text-xs h-7"
+                >
+                  {apiKey ? "✓ API Key Set" : "⚙ Set API Key"}
+                </Button>
+              </div>
+
+              {showApiKeyInput && (
+                <div className="space-y-2 bg-muted p-3 rounded">
+                  <Label className="text-xs">OpenAI API Key</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="password"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder="sk-..."
+                      className="flex-1 text-sm"
+                    />
+                    <Button size="sm" onClick={handleSaveApiKey}>
+                      Save
+                    </Button>
+                    {apiKey && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleClearApiKey}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Your API key is stored locally in your browser.
+                  </p>
+                </div>
+              )}
+
               <div className="flex gap-2">
                 <Input
                   value={generatePrompt}
@@ -593,8 +667,8 @@ export function SpritePacker({
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Generates an isometric building using AI. Requires
-                OPENAI_API_KEY environment variable.
+                Generates an isometric building using AI with your OpenAI API
+                key.
               </p>
             </div>
 
