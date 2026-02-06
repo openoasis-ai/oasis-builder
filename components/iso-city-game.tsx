@@ -48,7 +48,7 @@ export function IsoCityGame({
           });
         }
       },
-      backgroundColor: "#87CEEB",
+      transparent: true,
       pixelArt: false,
       antialias: true,
       scale: {
@@ -108,9 +108,31 @@ export function IsoCityGame({
       if (scene) {
         scene.tileWidth = tileWidth;
         scene.tileHeight = tileHeight;
-        // Redraw grid
-        scene.drawGrid();
+        // Force grid redraw on next frame by invalidating cache
+        scene.lastCameraScrollX = -Infinity;
       }
+    };
+
+    (window as any).phaserSetGridVisible = (visible: boolean) => {
+      const scene = game.scene.getScene("CityBuilder") as any;
+      if (scene) {
+        scene.setGridVisible(visible);
+      }
+    };
+
+    (window as any).phaserExpandGrid = (amount: number) => {
+      const scene = game.scene.getScene("CityBuilder") as any;
+      if (scene) {
+        scene.expandGrid(amount);
+      }
+    };
+
+    (window as any).phaserGetGridSize = () => {
+      const scene = game.scene.getScene("CityBuilder") as any;
+      if (scene) {
+        return scene.gridSize;
+      }
+      return 30;
     };
 
     // Add custom asset set at runtime
@@ -421,5 +443,14 @@ export function IsoCityGame({
     };
   }, []); // Empty deps - only create once
 
-  return <div ref={gameRef} className="w-full h-full" />;
+  return (
+    <div
+      ref={gameRef}
+      className="w-full h-full"
+      style={{
+        backgroundImage: "url(/dessert.png)",
+        backgroundSize: "100% 100%",
+      }}
+    />
+  );
 }

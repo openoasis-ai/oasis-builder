@@ -8,10 +8,10 @@ const ICON_STYLE_JSON = {
         "1:1 ratio canvas, with objects fitting comfortably within margins",
       element_arrangement:
         "central dominant object, vertically centered in canvas",
-      ground_base: "DO NOT include any ground, grass, floor, platform, or isometric diamond base - the object should float on transparent background",
+      ground_base: "DO NOT include any ground, grass, floor, platform, or isometric diamond base - the object should float on transparent background, unless instructed for specifically the diamond base floor tile",
     },
     composition: {
-      element_count: "2-4 main architectural elements",
+      element_count: "2-4 main architectural elements, unless instructed with many more",
       spatial_depth: "layered to create sense of dimension and slight elevation",
       scale_consistency: "uniform object scale across icon set",
       scene_density: "minimal to moderate, maintaining clarity and visual focus",

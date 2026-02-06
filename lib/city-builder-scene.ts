@@ -5,7 +5,7 @@ import { AssetSet, AssetConfig } from "./game-types";
 interface CityBuilderConfig {
   tileWidth: number;
   tileHeight: number;
-  gridSize: number;
+  gridSize?: number;
   assetConfigs: AssetConfig[];
   onTileSelect?: (tileIndex: number) => void;
   onGridPositionChange?: (x: number, y: number) => void;
@@ -15,6 +15,8 @@ export class CityBuilder extends Phaser.Scene {
   gridSize: number;
   tileWidth: number;
   tileHeight: number;
+  originOffsetX: number;
+  originOffsetY: number;
   cityMap = new Map();
   selectedSpriteIndex = 0;
   assetSets: Map<string, AssetSet> = new Map();
@@ -22,10 +24,15 @@ export class CityBuilder extends Phaser.Scene {
   currentLayer = 0; // For stacking buildings
   hoverSprite: Phaser.GameObjects.Image | null = null;
   hoverGraphics!: Phaser.GameObjects.Graphics;
+  gridGraphics!: Phaser.GameObjects.Graphics;
+  gridVisible = true;
   cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   canvasFocused = false;
   lastHoverGridX = -1;
   lastHoverGridY = -1;
+  private lastCameraScrollX = -Infinity;
+  private lastCameraScrollY = -Infinity;
+  private lastCameraZoom = -1;
   assetConfigList: AssetConfig[];
   isPanning = false;
   spaceKeyDown = false;
@@ -38,9 +45,11 @@ export class CityBuilder extends Phaser.Scene {
 
   constructor(config: CityBuilderConfig) {
     super({ key: "CityBuilder" });
-    this.gridSize = config.gridSize;
+    this.gridSize = config.gridSize ?? 30;
     this.tileWidth = config.tileWidth;
     this.tileHeight = config.tileHeight;
+    this.originOffsetX = (this.gridSize * this.tileWidth) / 2;
+    this.originOffsetY = 200;
     this.assetConfigList = config.assetConfigs;
     this.onTileSelect = config.onTileSelect;
     this.onGridPositionChange = config.onGridPositionChange;
@@ -77,14 +86,16 @@ export class CityBuilder extends Phaser.Scene {
       this.selectedAssetSetId = this.assetConfigList[0].id;
     }
 
-    this.cameras.main.setBackgroundColor("#87CEEB");
+    this.cameras.main.setBackgroundColor("rgba(0,0,0,0)");
     this.cameras.main.zoom = 0.6; // Start more zoomed out
 
-    const centerX = (this.gridSize * this.tileWidth) / 2;
+    const centerX = this.originOffsetX;
     const centerY = (this.gridSize * this.tileHeight) / 2;
-    this.cameras.main.centerOn(centerX, centerY + 200);
+    this.cameras.main.centerOn(centerX, centerY + this.originOffsetY);
 
-    this.drawGrid();
+    this.gridGraphics = this.add.graphics();
+    this.gridGraphics.setDepth(-1);
+    this.drawVisibleGrid();
     this.hoverGraphics = this.add.graphics();
     this.hoverGraphics.setDepth(9999); // Keep hover above everything except preview sprite
 
@@ -171,24 +182,42 @@ export class CityBuilder extends Phaser.Scene {
     );
   }
 
-  drawGrid() {
-    const graphics = this.add.graphics();
-    graphics.lineStyle(1, 0x999999, 0.4);
+  drawVisibleGrid() {
+    this.gridGraphics.clear();
 
-    for (let row = 0; row < this.gridSize; row++) {
-      for (let col = 0; col < this.gridSize; col++) {
+    if (!this.gridVisible) return;
+
+    this.gridGraphics.lineStyle(1, 0x999999, 0.4);
+
+    const cam = this.cameras.main;
+    const worldView = cam.worldView;
+
+    // Convert the 4 corners of the viewport to grid coordinates
+    const topLeft = this.isoToGrid(worldView.x, worldView.y);
+    const topRight = this.isoToGrid(worldView.right, worldView.y);
+    const bottomLeft = this.isoToGrid(worldView.x, worldView.bottom);
+    const bottomRight = this.isoToGrid(worldView.right, worldView.bottom);
+
+    const buffer = 3;
+    // Clamp to grid bounds [0, gridSize)
+    const minGridX = Math.max(0, Math.min(topLeft.gridX, topRight.gridX, bottomLeft.gridX, bottomRight.gridX) - buffer);
+    const maxGridX = Math.min(this.gridSize - 1, Math.max(topLeft.gridX, topRight.gridX, bottomLeft.gridX, bottomRight.gridX) + buffer);
+    const minGridY = Math.max(0, Math.min(topLeft.gridY, topRight.gridY, bottomLeft.gridY, bottomRight.gridY) - buffer);
+    const maxGridY = Math.min(this.gridSize - 1, Math.max(topLeft.gridY, topRight.gridY, bottomLeft.gridY, bottomRight.gridY) + buffer);
+
+    for (let row = minGridY; row <= maxGridY; row++) {
+      for (let col = minGridX; col <= maxGridX; col++) {
         const pos = this.gridToIso(col, row);
 
-        graphics.beginPath();
-        graphics.moveTo(pos.x, pos.y - this.tileHeight / 2);
-        graphics.lineTo(pos.x + this.tileWidth / 2, pos.y);
-        graphics.lineTo(pos.x, pos.y + this.tileHeight / 2);
-        graphics.lineTo(pos.x - this.tileWidth / 2, pos.y);
-        graphics.closePath();
-        graphics.strokePath();
+        this.gridGraphics.beginPath();
+        this.gridGraphics.moveTo(pos.x, pos.y - this.tileHeight / 2);
+        this.gridGraphics.lineTo(pos.x + this.tileWidth / 2, pos.y);
+        this.gridGraphics.lineTo(pos.x, pos.y + this.tileHeight / 2);
+        this.gridGraphics.lineTo(pos.x - this.tileWidth / 2, pos.y);
+        this.gridGraphics.closePath();
+        this.gridGraphics.strokePath();
       }
     }
-    graphics.setDepth(-1);
   }
 
   updateHoverPreview(pointer: Phaser.Input.Pointer) {
@@ -298,20 +327,16 @@ export class CityBuilder extends Phaser.Scene {
   gridToIso(gridX: number, gridY: number) {
     const isoX = (gridX - gridY) * (this.tileWidth / 2);
     const isoY = (gridX + gridY) * (this.tileHeight / 2);
-    const offsetX = (this.gridSize * this.tileWidth) / 2;
-    const offsetY = 200;
 
     return {
-      x: isoX + offsetX,
-      y: isoY + offsetY,
+      x: isoX + this.originOffsetX,
+      y: isoY + this.originOffsetY,
     };
   }
 
   isoToGrid(isoX: number, isoY: number) {
-    const offsetX = (this.gridSize * this.tileWidth) / 2;
-    const offsetY = 200;
-    const adjustedX = isoX - offsetX;
-    const adjustedY = isoY - offsetY;
+    const adjustedX = isoX - this.originOffsetX;
+    const adjustedY = isoY - this.originOffsetY;
 
     const gridX = Math.floor(
       (adjustedX / (this.tileWidth / 2) +
@@ -439,93 +464,93 @@ export class CityBuilder extends Phaser.Scene {
     const gridPos = this.isoToGrid(worldPoint.x, worldPoint.y);
 
     if (
-      gridPos.gridX >= 0 &&
-      gridPos.gridX < this.gridSize &&
-      gridPos.gridY >= 0 &&
-      gridPos.gridY < this.gridSize
-    ) {
-      const assetSet = this.assetSets.get(this.selectedAssetSetId);
-      const spriteData = assetSet?.sprites[this.selectedSpriteIndex];
-      if (!assetSet || !spriteData) return;
+      gridPos.gridX < 0 ||
+      gridPos.gridX >= this.gridSize ||
+      gridPos.gridY < 0 ||
+      gridPos.gridY >= this.gridSize
+    ) return;
 
-      const footprint = spriteData.footprint || { width: 1, height: 1 };
-      const origin = spriteData.origin || { x: 0.5, y: 0.65 };
-      const textureKey = assetSet.textureKey;
-      const tileName = spriteData.name;
+    const assetSet = this.assetSets.get(this.selectedAssetSetId);
+    const spriteData = assetSet?.sprites[this.selectedSpriteIndex];
+    if (!assetSet || !spriteData) return;
 
-      // Check if all footprint cells are within bounds
-      for (let fx = 0; fx < footprint.width; fx++) {
-        for (let fy = 0; fy < footprint.height; fy++) {
-          const tileX = gridPos.gridX + fx;
-          const tileY = gridPos.gridY + fy;
-          if (tileX >= this.gridSize || tileY >= this.gridSize) return;
-        }
+    const footprint = spriteData.footprint || { width: 1, height: 1 };
+    const origin = spriteData.origin || { x: 0.5, y: 0.65 };
+    const textureKey = assetSet.textureKey;
+    const tileName = spriteData.name;
+
+    // Check if all footprint cells are within bounds
+    for (let fx = 0; fx < footprint.width; fx++) {
+      for (let fy = 0; fy < footprint.height; fy++) {
+        const tileX = gridPos.gridX + fx;
+        const tileY = gridPos.gridY + fy;
+        if (tileX >= this.gridSize || tileY >= this.gridSize) return;
       }
+    }
 
-      // Clear any existing tiles in the footprint area
-      for (let fx = 0; fx < footprint.width; fx++) {
-        for (let fy = 0; fy < footprint.height; fy++) {
-          const tileX = gridPos.gridX + fx;
-          const tileY = gridPos.gridY + fy;
-          const key = `${tileX},${tileY},${this.currentLayer}`;
-          if (this.cityMap.has(key)) {
-            const existing = this.cityMap.get(key);
-            // Only destroy sprite if it's the anchor cell
-            if (existing.isAnchor) {
-              existing.sprite.destroy();
-            }
-            this.cityMap.delete(key);
+    // Clear any existing tiles in the footprint area
+    for (let fx = 0; fx < footprint.width; fx++) {
+      for (let fy = 0; fy < footprint.height; fy++) {
+        const tileX = gridPos.gridX + fx;
+        const tileY = gridPos.gridY + fy;
+        const key = `${tileX},${tileY},${this.currentLayer}`;
+        if (this.cityMap.has(key)) {
+          const existing = this.cityMap.get(key);
+          // Only destroy sprite if it's the anchor cell
+          if (existing.isAnchor) {
+            existing.sprite.destroy();
           }
+          this.cityMap.delete(key);
         }
       }
+    }
 
-      // Position sprite at the center of the footprint
-      const centerX = gridPos.gridX + (footprint.width - 1) / 2;
-      const centerY = gridPos.gridY + (footprint.height - 1) / 2;
-      const isoPos = this.gridToIso(centerX, centerY);
+    // Position sprite at the center of the footprint
+    const centerX = gridPos.gridX + (footprint.width - 1) / 2;
+    const centerY = gridPos.gridY + (footprint.height - 1) / 2;
+    const isoPos = this.gridToIso(centerX, centerY);
 
-      // Offset Y position for stacking (higher layers appear above)
-      const yOffset = this.currentLayer * 30;
-      const sprite = this.add.image(
-        isoPos.x,
-        isoPos.y - yOffset,
-        textureKey,
-        tileName
-      );
-      sprite.setOrigin(origin.x, origin.y);
-      // Depth based on center position
-      sprite.setDepth((centerX + centerY) * 100 + this.currentLayer * 10);
+    // Offset Y position for stacking (higher layers appear above)
+    const yOffset = this.currentLayer * 30;
+    const sprite = this.add.image(
+      isoPos.x,
+      isoPos.y - yOffset,
+      textureKey,
+      tileName
+    );
+    sprite.setOrigin(origin.x, origin.y);
+    // Depth based on center position
+    sprite.setDepth((centerX + centerY) * 100 + this.currentLayer * 10);
 
-      // Store anchor cell with sprite
-      const anchorKey = `${gridPos.gridX},${gridPos.gridY},${this.currentLayer}`;
-      this.cityMap.set(anchorKey, {
-        sprite,
-        tileName,
-        textureKey,
-        layer: this.currentLayer,
-        footprint,
-        origin,
-        isAnchor: true,
-      });
+    // Store anchor cell with sprite
+    const anchorKey = `${gridPos.gridX},${gridPos.gridY},${this.currentLayer}`;
+    this.cityMap.set(anchorKey, {
+      sprite,
+      tileName,
+      textureKey,
+      layer: this.currentLayer,
+      footprint,
+      origin,
+      isAnchor: true,
+    });
 
-      // Mark all other footprint cells (non-anchor)
-      for (let fx = 0; fx < footprint.width; fx++) {
-        for (let fy = 0; fy < footprint.height; fy++) {
-          if (fx === 0 && fy === 0) continue; // Skip anchor
-          const tileX = gridPos.gridX + fx;
-          const tileY = gridPos.gridY + fy;
-          const key = `${tileX},${tileY},${this.currentLayer}`;
-          this.cityMap.set(key, {
-            sprite: null,
-            tileName,
-            textureKey,
-            layer: this.currentLayer,
-            footprint,
-            origin,
-            isAnchor: false,
-            anchorKey,
-          });
-        }
+    // Mark all other footprint cells (non-anchor)
+    for (let fx = 0; fx < footprint.width; fx++) {
+      for (let fy = 0; fy < footprint.height; fy++) {
+        if (fx === 0 && fy === 0) continue; // Skip anchor
+        const tileX = gridPos.gridX + fx;
+        const tileY = gridPos.gridY + fy;
+        const key = `${tileX},${tileY},${this.currentLayer}`;
+        this.cityMap.set(key, {
+          sprite: null,
+          tileName,
+          textureKey,
+          layer: this.currentLayer,
+          footprint,
+          origin,
+          isAnchor: false,
+          anchorKey,
+        });
       }
     }
   }
@@ -538,42 +563,42 @@ export class CityBuilder extends Phaser.Scene {
     const gridPos = this.isoToGrid(worldPoint.x, worldPoint.y);
 
     if (
-      gridPos.gridX >= 0 &&
-      gridPos.gridX < this.gridSize &&
-      gridPos.gridY >= 0 &&
-      gridPos.gridY < this.gridSize
-    ) {
-      const key = `${gridPos.gridX},${gridPos.gridY},${this.currentLayer}`;
+      gridPos.gridX < 0 ||
+      gridPos.gridX >= this.gridSize ||
+      gridPos.gridY < 0 ||
+      gridPos.gridY >= this.gridSize
+    ) return;
 
-      if (this.cityMap.has(key)) {
-        const tileData = this.cityMap.get(key);
+    const key = `${gridPos.gridX},${gridPos.gridY},${this.currentLayer}`;
 
-        // Find the anchor cell
-        let anchorKey = key;
-        if (!tileData.isAnchor && tileData.anchorKey) {
-          anchorKey = tileData.anchorKey;
+    if (this.cityMap.has(key)) {
+      const tileData = this.cityMap.get(key);
+
+      // Find the anchor cell
+      let anchorKey = key;
+      if (!tileData.isAnchor && tileData.anchorKey) {
+        anchorKey = tileData.anchorKey;
+      }
+
+      const anchorData = this.cityMap.get(anchorKey);
+      if (anchorData) {
+        // Parse anchor position
+        const [anchorX, anchorY, layer] = anchorKey
+          .split(",")
+          .map(Number);
+        const footprint = anchorData.footprint || { width: 1, height: 1 };
+
+        // Remove all footprint cells
+        for (let fx = 0; fx < footprint.width; fx++) {
+          for (let fy = 0; fy < footprint.height; fy++) {
+            const cellKey = `${anchorX + fx},${anchorY + fy},${layer}`;
+            this.cityMap.delete(cellKey);
+          }
         }
 
-        const anchorData = this.cityMap.get(anchorKey);
-        if (anchorData) {
-          // Parse anchor position
-          const [anchorX, anchorY, layer] = anchorKey
-            .split(",")
-            .map(Number);
-          const footprint = anchorData.footprint || { width: 1, height: 1 };
-
-          // Remove all footprint cells
-          for (let fx = 0; fx < footprint.width; fx++) {
-            for (let fy = 0; fy < footprint.height; fy++) {
-              const cellKey = `${anchorX + fx},${anchorY + fy},${layer}`;
-              this.cityMap.delete(cellKey);
-            }
-          }
-
-          // Destroy the sprite
-          if (anchorData.sprite) {
-            anchorData.sprite.destroy();
-          }
+        // Destroy the sprite
+        if (anchorData.sprite) {
+          anchorData.sprite.destroy();
         }
       }
     }
@@ -594,6 +619,21 @@ export class CityBuilder extends Phaser.Scene {
     this.lastHoverGridX = -1;
     this.lastHoverGridY = -1;
     console.log("Current layer:", this.currentLayer);
+  }
+
+  setGridVisible(visible: boolean) {
+    this.gridVisible = visible;
+    this.lastCameraScrollX = -Infinity; // Force redraw
+  }
+
+  expandGrid(amount: number) {
+    this.gridSize = Math.max(5, this.gridSize + amount);
+    this.lastCameraScrollX = -Infinity; // Force redraw
+    window.dispatchEvent(
+      new CustomEvent("phaserGridSizeChanged", {
+        detail: { gridSize: this.gridSize },
+      })
+    );
   }
 
   exportMap() {
@@ -652,8 +692,10 @@ export class CityBuilder extends Phaser.Scene {
     });
 
     const jsonData = {
-      version: "3.0",
+      version: "4.0",
       gridSize: this.gridSize,
+      originOffsetX: this.originOffsetX,
+      originOffsetY: this.originOffsetY,
       tileWidth: this.tileWidth,
       tileHeight: this.tileHeight,
       customAssets: customAssets,
@@ -680,6 +722,15 @@ export class CityBuilder extends Phaser.Scene {
         if (tileData.sprite) tileData.sprite.destroy();
       });
       this.cityMap.clear();
+
+      // Restore origin offset from save data, or compute from gridSize for legacy maps
+      if (jsonData.originOffsetX !== undefined) {
+        this.originOffsetX = jsonData.originOffsetX;
+        this.originOffsetY = jsonData.originOffsetY ?? 200;
+      } else if (jsonData.gridSize) {
+        this.originOffsetX = (jsonData.gridSize * this.tileWidth) / 2;
+        this.originOffsetY = 200;
+      }
 
       // Load custom assets first if they exist
       if (jsonData.customAssets && jsonData.customAssets.length > 0) {
@@ -835,6 +886,19 @@ export class CityBuilder extends Phaser.Scene {
     }
     if (this.cursors?.down.isDown) {
       this.cameras.main.scrollY += panSpeed;
+    }
+
+    // Redraw grid and reposition background when camera moves or zooms
+    const cam = this.cameras.main;
+    if (
+      cam.scrollX !== this.lastCameraScrollX ||
+      cam.scrollY !== this.lastCameraScrollY ||
+      cam.zoom !== this.lastCameraZoom
+    ) {
+      this.lastCameraScrollX = cam.scrollX;
+      this.lastCameraScrollY = cam.scrollY;
+      this.lastCameraZoom = cam.zoom;
+      this.drawVisibleGrid();
     }
   }
 }
