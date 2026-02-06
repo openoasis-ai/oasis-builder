@@ -282,27 +282,52 @@ export class CityBuilder extends Phaser.Scene {
     }
   }
 
+  private async openDB(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open("OasisBuilderDB", 1);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains("maps")) {
+          db.createObjectStore("maps");
+        }
+      };
+    });
+  }
+
   async loadFromLocalStorage(): Promise<boolean> {
     try {
-      const savedData = localStorage.getItem(this.AUTO_SAVE_KEY);
-      if (!savedData) {
+      const db = await this.openDB();
+      const transaction = db.transaction(["maps"], "readonly");
+      const store = transaction.objectStore("maps");
+      const request = store.get(this.AUTO_SAVE_KEY);
+
+      const jsonData = await new Promise<any>((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+
+      db.close();
+
+      if (!jsonData) {
         console.log("No auto-save data found");
         return false;
       }
 
-      const jsonData = JSON.parse(savedData);
       console.log("Loading map from auto-save...");
       await this.loadMap(jsonData);
       console.log("Auto-save loaded successfully");
       return true;
     } catch (error) {
-      console.error("Error loading from local storage:", error);
-      localStorage.removeItem(this.AUTO_SAVE_KEY); // Clear corrupted data
+      console.error("Error loading from IndexedDB:", error);
       return false;
     }
   }
 
-  saveToLocalStorage() {
+  async saveToLocalStorage() {
     try {
       const mapData: any[] = [];
       this.cityMap.forEach((tileData: any, key: string) => {
@@ -366,10 +391,20 @@ export class CityBuilder extends Phaser.Scene {
         timestamp: new Date().toISOString(),
       };
 
-      localStorage.setItem(this.AUTO_SAVE_KEY, JSON.stringify(jsonData));
-      console.log("Auto-saved to local storage");
+      const db = await this.openDB();
+      const transaction = db.transaction(["maps"], "readwrite");
+      const store = transaction.objectStore("maps");
+      store.put(jsonData, this.AUTO_SAVE_KEY);
+
+      await new Promise<void>((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      });
+
+      db.close();
+      console.log("Auto-saved to IndexedDB");
     } catch (error) {
-      console.error("Error saving to local storage:", error);
+      console.error("Error saving to IndexedDB:", error);
     }
   }
 

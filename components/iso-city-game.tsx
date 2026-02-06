@@ -641,12 +641,25 @@ export function IsoCityGame({
     };
 
     // Clear auto-save data
-    (window as any).phaserClearAutoSave = () => {
+    (window as any).phaserClearAutoSave = async () => {
       const scene = game.scene.getScene("CityBuilder") as any;
       if (scene) {
-        localStorage.removeItem(scene.AUTO_SAVE_KEY);
-        console.log("Auto-save data cleared");
-        return true;
+        try {
+          const db = await scene.openDB();
+          const transaction = db.transaction(["maps"], "readwrite");
+          const store = transaction.objectStore("maps");
+          store.delete(scene.AUTO_SAVE_KEY);
+          await new Promise<void>((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+          });
+          db.close();
+          console.log("Auto-save data cleared from IndexedDB");
+          return true;
+        } catch (error) {
+          console.error("Error clearing auto-save:", error);
+          return false;
+        }
       }
       return false;
     };
