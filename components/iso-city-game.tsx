@@ -388,6 +388,193 @@ export function IsoCityGame({
       });
     };
 
+    // Remove a single sprite from a custom asset set
+    (window as any).phaserRemoveSpriteFromAsset = (
+      assetId: string,
+      spriteIndex: number
+    ) => {
+      const scene = game.scene.getScene("CityBuilder") as any;
+      if (!scene || !scene.assetSets.has(assetId)) return false;
+
+      const assetSet = scene.assetSets.get(assetId);
+      const textureKey = assetSet.textureKey;
+
+      if (spriteIndex < 0 || spriteIndex >= assetSet.sprites.length)
+        return false;
+
+      const removedSprite = assetSet.sprites[spriteIndex];
+
+      // Destroy hover sprite before texture manipulation
+      if (scene.hoverSprite) {
+        scene.hoverSprite.destroy();
+        scene.hoverSprite = null;
+      }
+
+      // Remove all placed tiles that use this specific sprite
+      const keysToRemove: string[] = [];
+      scene.cityMap.forEach((tileData: any, key: string) => {
+        if (
+          tileData.textureKey === textureKey &&
+          tileData.tileName === removedSprite.name
+        ) {
+          if (tileData.sprite) {
+            tileData.sprite.destroy();
+          }
+          keysToRemove.push(key);
+        }
+      });
+      keysToRemove.forEach((key: string) => scene.cityMap.delete(key));
+
+      // Store placed sprites that use other sprites in this set for recreation
+      const spritesToRecreate: Array<{
+        key: string;
+        tileData: any;
+        position: { x: number; y: number };
+        depth: number;
+      }> = [];
+
+      scene.cityMap.forEach((tileData: any, key: string) => {
+        if (
+          tileData.sprite &&
+          tileData.textureKey === textureKey &&
+          tileData.isAnchor
+        ) {
+          spritesToRecreate.push({
+            key,
+            tileData: { ...tileData },
+            position: { x: tileData.sprite.x, y: tileData.sprite.y },
+            depth: tileData.sprite.depth,
+          });
+          tileData.sprite.destroy();
+          tileData.sprite = null;
+        }
+      });
+
+      // Remove the sprite from the array
+      const remainingSprites = assetSet.sprites.filter(
+        (_: any, i: number) => i !== spriteIndex
+      );
+      assetSet.sprites = remainingSprites;
+
+      // Rebuild the texture from remaining sprites
+      const existingSource =
+        scene.textures.get(textureKey).getSourceImage() as HTMLImageElement;
+
+      // Remove old texture
+      scene.textures.remove(textureKey);
+
+      if (remainingSprites.length === 0) {
+        // No sprites left - create a 1x1 transparent placeholder
+        const canvas = document.createElement("canvas");
+        canvas.width = 1;
+        canvas.height = 1;
+        const placeholderImg = new Image();
+        placeholderImg.onload = () => {
+          scene.textures.addImage(textureKey, placeholderImg);
+          assetSet.imageDataUrl = canvas.toDataURL();
+
+          scene.lastHoverGridX = -1;
+          scene.lastHoverGridY = -1;
+
+          window.dispatchEvent(
+            new CustomEvent("phaserAssetSetLoaded", {
+              detail: { assetSet, imagePath: assetSet.imageDataUrl },
+            })
+          );
+        };
+        placeholderImg.src = canvas.toDataURL();
+      } else {
+        // Rebuild canvas with remaining sprites packed vertically
+        let totalHeight = 0;
+        let maxWidth = 0;
+        const spriteImages: Array<{
+          sx: number;
+          sy: number;
+          sw: number;
+          sh: number;
+        }> = [];
+
+        remainingSprites.forEach((s: any) => {
+          spriteImages.push({ sx: s.x, sy: s.y, sw: s.width, sh: s.height });
+          maxWidth = Math.max(maxWidth, s.width);
+          totalHeight += s.height;
+        });
+
+        const canvas = document.createElement("canvas");
+        canvas.width = maxWidth;
+        canvas.height = totalHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return false;
+
+        let yOffset = 0;
+        remainingSprites.forEach((s: any, i: number) => {
+          const src = spriteImages[i];
+          ctx.drawImage(
+            existingSource,
+            src.sx,
+            src.sy,
+            src.sw,
+            src.sh,
+            0,
+            yOffset,
+            src.sw,
+            src.sh
+          );
+          s.x = 0;
+          s.y = yOffset;
+          yOffset += src.sh;
+        });
+
+        const newImg = new Image();
+        newImg.onload = () => {
+          scene.textures.addImage(textureKey, newImg);
+          const newTexture = scene.textures.get(textureKey);
+
+          remainingSprites.forEach((s: any) => {
+            newTexture.add(s.name, 0, s.x, s.y, s.width, s.height);
+          });
+
+          // Recreate placed sprites
+          spritesToRecreate.forEach(({ key, tileData, position, depth }) => {
+            const newSpriteObj = scene.add.image(
+              position.x,
+              position.y,
+              textureKey,
+              tileData.tileName
+            );
+            newSpriteObj.setOrigin(tileData.origin.x, tileData.origin.y);
+            newSpriteObj.setDepth(depth);
+
+            const mapData = scene.cityMap.get(key);
+            if (mapData) {
+              mapData.sprite = newSpriteObj;
+            }
+          });
+
+          assetSet.imageDataUrl = canvas.toDataURL();
+
+          scene.lastHoverGridX = -1;
+          scene.lastHoverGridY = -1;
+
+          window.dispatchEvent(
+            new CustomEvent("phaserAssetSetLoaded", {
+              detail: { assetSet, imagePath: assetSet.imageDataUrl },
+            })
+          );
+        };
+        newImg.src = canvas.toDataURL();
+      }
+
+      // Update selected sprite index if needed
+      if (scene.selectedAssetSetId === assetId) {
+        if (scene.selectedSpriteIndex >= remainingSprites.length) {
+          scene.selectedSpriteIndex = Math.max(0, remainingSprites.length - 1);
+        }
+      }
+
+      return true;
+    };
+
     // Remove custom asset set
     (window as any).phaserRemoveCustomAsset = (id: string) => {
       const scene = game.scene.getScene("CityBuilder") as any;
