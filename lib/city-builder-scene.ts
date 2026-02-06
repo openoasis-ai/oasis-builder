@@ -42,6 +42,9 @@ export class CityBuilder extends Phaser.Scene {
   panStartScrollY = 0;
   onTileSelect?: (tileIndex: number) => void;
   onGridPositionChange?: (x: number, y: number) => void;
+  private autoSaveTimeout: number | null = null;
+  private readonly AUTO_SAVE_KEY = "oasis-builder-autosave";
+  private readonly AUTO_SAVE_DELAY = 2000; // 2 seconds debounce
 
   constructor(config: CityBuilderConfig) {
     super({ key: "CityBuilder" });
@@ -108,9 +111,14 @@ export class CityBuilder extends Phaser.Scene {
     // createCursorKeys() adds captures for arrow keys and space which we need to clear
     this.input.keyboard!.clearCaptures();
 
-    // Load the oasis map first, then prefill empty cells with grass
-    await this.loadOasisMap();
-    this.prefillMapWithGrass();
+    // Try to load from local storage first
+    const loadedFromStorage = await this.loadFromLocalStorage();
+
+    if (!loadedFromStorage) {
+      // If no saved data, load the oasis map first, then prefill empty cells with grass
+      await this.loadOasisMap();
+      this.prefillMapWithGrass();
+    }
 
     // Draw grid after everything is loaded
     this.drawVisibleGrid();
@@ -272,6 +280,108 @@ export class CityBuilder extends Phaser.Scene {
     } catch (error) {
       console.warn("Failed to load oasis-map.json:", error);
     }
+  }
+
+  async loadFromLocalStorage(): Promise<boolean> {
+    try {
+      const savedData = localStorage.getItem(this.AUTO_SAVE_KEY);
+      if (!savedData) {
+        console.log("No auto-save data found");
+        return false;
+      }
+
+      const jsonData = JSON.parse(savedData);
+      console.log("Loading map from auto-save...");
+      await this.loadMap(jsonData);
+      console.log("Auto-save loaded successfully");
+      return true;
+    } catch (error) {
+      console.error("Error loading from local storage:", error);
+      localStorage.removeItem(this.AUTO_SAVE_KEY); // Clear corrupted data
+      return false;
+    }
+  }
+
+  saveToLocalStorage() {
+    try {
+      const mapData: any[] = [];
+      this.cityMap.forEach((tileData: any, key: string) => {
+        if (!tileData.isAnchor) return;
+
+        const [gridX, gridY, layer] = key.split(",").map(Number);
+        const exportTile: any = {
+          x: gridX,
+          y: gridY,
+          layer: layer || 0,
+          tileName: tileData.tileName,
+          textureKey: tileData.textureKey,
+        };
+
+        if (
+          tileData.footprint &&
+          (tileData.footprint.width > 1 || tileData.footprint.height > 1)
+        ) {
+          exportTile.footprint = tileData.footprint;
+        }
+
+        if (
+          tileData.origin &&
+          (tileData.origin.x !== 0.5 || tileData.origin.y !== 0.5)
+        ) {
+          exportTile.origin = tileData.origin;
+        }
+
+        mapData.push(exportTile);
+      });
+
+      const customAssets: any[] = [];
+      this.assetSets.forEach((assetSet) => {
+        if (assetSet.isCustom && assetSet.imageDataUrl) {
+          customAssets.push({
+            id: assetSet.id,
+            name: assetSet.name,
+            imageDataUrl: assetSet.imageDataUrl,
+            sprites: assetSet.sprites.map((sprite) => ({
+              name: sprite.name,
+              x: sprite.x,
+              y: sprite.y,
+              width: sprite.width,
+              height: sprite.height,
+              footprint: sprite.footprint,
+              origin: sprite.origin,
+            })),
+          });
+        }
+      });
+
+      const jsonData = {
+        version: "4.0",
+        gridSize: this.gridSize,
+        originOffsetX: this.originOffsetX,
+        originOffsetY: this.originOffsetY,
+        tileWidth: this.tileWidth,
+        tileHeight: this.tileHeight,
+        customAssets: customAssets,
+        tiles: mapData,
+        timestamp: new Date().toISOString(),
+      };
+
+      localStorage.setItem(this.AUTO_SAVE_KEY, JSON.stringify(jsonData));
+      console.log("Auto-saved to local storage");
+    } catch (error) {
+      console.error("Error saving to local storage:", error);
+    }
+  }
+
+  scheduleAutoSave() {
+    if (this.autoSaveTimeout !== null) {
+      clearTimeout(this.autoSaveTimeout);
+    }
+
+    this.autoSaveTimeout = window.setTimeout(() => {
+      this.saveToLocalStorage();
+      this.autoSaveTimeout = null;
+    }, this.AUTO_SAVE_DELAY);
   }
 
   drawVisibleGrid() {
@@ -645,6 +755,9 @@ export class CityBuilder extends Phaser.Scene {
         });
       }
     }
+
+    // Schedule auto-save
+    this.scheduleAutoSave();
   }
 
   removeTile(pointer: Phaser.Input.Pointer) {
@@ -692,6 +805,9 @@ export class CityBuilder extends Phaser.Scene {
         if (anchorData.sprite) {
           anchorData.sprite.destroy();
         }
+
+        // Schedule auto-save
+        this.scheduleAutoSave();
       }
     }
   }
@@ -726,6 +842,8 @@ export class CityBuilder extends Phaser.Scene {
         detail: { gridSize: this.gridSize },
       })
     );
+    // Schedule auto-save when grid size changes
+    this.scheduleAutoSave();
   }
 
   exportMap() {
@@ -956,6 +1074,9 @@ export class CityBuilder extends Phaser.Scene {
       });
 
       console.log("Map loaded with", jsonData.tiles.length, "tiles");
+
+      // Save to local storage after importing a map
+      this.saveToLocalStorage();
     } catch (error) {
       console.error("Error loading map:", error);
     }

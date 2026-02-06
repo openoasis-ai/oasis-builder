@@ -203,6 +203,9 @@ export function IsoCityGame({
             })
           );
 
+          // Schedule auto-save after adding custom asset
+          scene.scheduleAutoSave();
+
           resolve(true);
         };
         img.onerror = () => {
@@ -376,6 +379,9 @@ export function IsoCityGame({
               })
             );
 
+            // Schedule auto-save after adding sprite
+            scene.scheduleAutoSave();
+
             resolve(true);
           };
           newImg.src = canvas.toDataURL();
@@ -481,6 +487,9 @@ export function IsoCityGame({
               detail: { assetSet, imagePath: assetSet.imageDataUrl },
             })
           );
+
+          // Schedule auto-save after removing sprite
+          scene.scheduleAutoSave();
         };
         placeholderImg.src = canvas.toDataURL();
       } else {
@@ -561,6 +570,9 @@ export function IsoCityGame({
               detail: { assetSet, imagePath: assetSet.imageDataUrl },
             })
           );
+
+          // Schedule auto-save after removing sprite
+          scene.scheduleAutoSave();
         };
         newImg.src = canvas.toDataURL();
       }
@@ -619,6 +631,21 @@ export function IsoCityGame({
         window.dispatchEvent(
           new CustomEvent("phaserAssetSetRemoved", { detail: { id } })
         );
+
+        // Schedule auto-save after removing custom asset
+        scene.scheduleAutoSave();
+
+        return true;
+      }
+      return false;
+    };
+
+    // Clear auto-save data
+    (window as any).phaserClearAutoSave = () => {
+      const scene = game.scene.getScene("CityBuilder") as any;
+      if (scene) {
+        localStorage.removeItem(scene.AUTO_SAVE_KEY);
+        console.log("Auto-save data cleared");
         return true;
       }
       return false;
