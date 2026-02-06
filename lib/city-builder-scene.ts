@@ -612,7 +612,7 @@ export class CityBuilder extends Phaser.Scene {
     );
     sprite.setOrigin(origin.x, origin.y);
     // Depth based on center position
-    sprite.setDepth((centerX + centerY) * 100 + this.currentLayer * 10);
+    sprite.setDepth((centerX + centerY) * 100 + this.currentLayer * 1000);
 
     // Store anchor cell with sprite
     const anchorKey = `${gridPos.gridX},${gridPos.gridY},${this.currentLayer}`;
@@ -922,7 +922,7 @@ export class CityBuilder extends Phaser.Scene {
           tile.tileName
         );
         sprite.setOrigin(origin.x, origin.y);
-        sprite.setDepth((centerX + centerY) * 100 + layer * 10);
+        sprite.setDepth((centerX + centerY) * 100 + layer * 1000);
 
         // Store anchor cell
         const anchorKey = `${tile.x},${tile.y},${layer}`;
