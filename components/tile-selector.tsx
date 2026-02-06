@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, Upload, X, Plus, Grid3X3, Expand } from "lucide-react";
+import { Download, Upload, X, Plus, Grid3X3, Expand, Trash2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -15,6 +15,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { SpritePacker } from "./sprite-packer";
 import { SpriteData, AssetSet } from "@/lib/game-types";
 
@@ -47,6 +61,12 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
   const [addToAssetId, setAddToAssetId] = useState<string | null>(null);
   const [gridVisible, setGridVisible] = useState(true);
   const [gridSize, setGridSize] = useState(30);
+  const [newTabDialogOpen, setNewTabDialogOpen] = useState(false);
+  const [newTabName, setNewTabName] = useState("");
+  const [contextMenu, setContextMenu] = useState<{
+    assetSetId: string;
+    spriteIndex: number;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -233,6 +253,34 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
     }
   };
 
+  const handleCreateTab = () => {
+    const name = newTabName.trim();
+    if (!name) return;
+
+    const id = name.toLowerCase().replace(/\s+/g, "_");
+
+    // Create a 1x1 transparent image as placeholder
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const emptyImageDataUrl = canvas.toDataURL();
+
+    const addCustomAsset = (window as any).phaserAddCustomAsset;
+    if (addCustomAsset) {
+      addCustomAsset(id, name, emptyImageDataUrl, []);
+    }
+
+    setNewTabDialogOpen(false);
+    setNewTabName("");
+  };
+
+  const handleRemoveSprite = (assetSetId: string, spriteIndex: number) => {
+    if ((window as any).phaserRemoveSpriteFromAsset) {
+      (window as any).phaserRemoveSpriteFromAsset(assetSetId, spriteIndex);
+    }
+    setContextMenu(null);
+  };
+
   const handleRemoveCustomAsset = (id: string) => {
     if ((window as any).phaserRemoveCustomAsset) {
       (window as any).phaserRemoveCustomAsset(id);
@@ -353,31 +401,42 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
               className="flex-1 flex flex-col overflow-hidden min-h-0"
             >
               <div className="w-full flex-shrink-0 overflow-x-auto">
-                <TabsList className="inline-flex w-max min-w-full">
-                  {assetSetArray.map((assetSet) => (
-                    <TabsTrigger
-                      key={assetSet.id}
-                      value={assetSet.id}
-                      className="text-xs px-2 whitespace-nowrap relative group"
-                    >
-                      {assetSet.name.replace("City ", "")} (
-                      {assetSet.sprites.length})
-                      {assetSet.isCustom && (
-                        <span
-                          role="button"
-                          className="absolute -top-1 -right-1 w-4 h-4 bg-muted-foreground/20 hover:bg-muted-foreground/40 text-muted-foreground rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            setDeleteConfirmId(assetSet.id);
-                          }}
-                        >
-                          <X className="w-3 h-3" />
-                        </span>
-                      )}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
+                <div className="inline-flex items-center w-max min-w-full gap-1">
+                  <TabsList className="inline-flex">
+                    {assetSetArray.map((assetSet) => (
+                      <TabsTrigger
+                        key={assetSet.id}
+                        value={assetSet.id}
+                        className="text-xs px-2 whitespace-nowrap relative group"
+                      >
+                        {assetSet.name.replace("City ", "")} (
+                        {assetSet.sprites.length})
+                        {assetSet.isCustom && (
+                          <span
+                            role="button"
+                            className="absolute -top-1 -right-1 w-4 h-4 bg-muted-foreground/20 hover:bg-muted-foreground/40 text-muted-foreground rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              setDeleteConfirmId(assetSet.id);
+                            }}
+                          >
+                            <X className="w-3 h-3" />
+                          </span>
+                        )}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 flex-shrink-0"
+                    onClick={() => setNewTabDialogOpen(true)}
+                    title="Add new tab"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
               </div>
 
               {assetSetArray.map((assetSet) => (
@@ -394,10 +453,12 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
                           sprite?.footprint &&
                           (sprite.footprint.width > 1 ||
                             sprite.footprint.height > 1);
+                        const isContextTarget =
+                          contextMenu?.assetSetId === assetSet.id &&
+                          contextMenu?.spriteIndex === index;
 
-                        return (
+                        const tileButton = (
                           <Button
-                            key={index}
                             variant={
                               selectedAssetSetId === assetSet.id &&
                               index === selectedIndex
@@ -406,6 +467,14 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
                             }
                             className="w-12 h-12 p-0 relative"
                             onClick={() => handleTileClick(index, assetSet.id)}
+                            onContextMenu={(e) => {
+                              if (!assetSet.isCustom) return;
+                              e.preventDefault();
+                              setContextMenu({
+                                assetSetId: assetSet.id,
+                                spriteIndex: index,
+                              });
+                            }}
                             title={
                               sprite?.footprint
                                 ? `${sprite.footprint.width}x${sprite.footprint.height}`
@@ -426,6 +495,46 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
                               </span>
                             )}
                           </Button>
+                        );
+
+                        if (assetSet.isCustom) {
+                          return (
+                            <Popover
+                              key={index}
+                              open={isContextTarget}
+                              onOpenChange={(open) => {
+                                if (!open) setContextMenu(null);
+                              }}
+                            >
+                              <PopoverTrigger asChild>
+                                {tileButton}
+                              </PopoverTrigger>
+                              <PopoverContent
+                                className="w-auto p-1"
+                                side="right"
+                                align="start"
+                              >
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="w-full justify-start text-destructive hover:text-destructive h-8 px-2"
+                                  onClick={() =>
+                                    handleRemoveSprite(
+                                      assetSet.id,
+                                      index
+                                    )
+                                  }
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 mr-2" />
+                                  Delete
+                                </Button>
+                              </PopoverContent>
+                            </Popover>
+                          );
+                        }
+
+                        return (
+                          <span key={index}>{tileButton}</span>
                         );
                       })}
                       {/* Add button for custom assets */}
@@ -460,6 +569,49 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* New Tab Dialog */}
+      <Dialog
+        open={newTabDialogOpen}
+        onOpenChange={(open) => {
+          setNewTabDialogOpen(open);
+          if (!open) setNewTabName("");
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New Tab</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="tab-name">Name</Label>
+            <Input
+              id="tab-name"
+              value={newTabName}
+              onChange={(e) => setNewTabName(e.target.value)}
+              placeholder="My Custom Tiles"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newTabName.trim()) handleCreateTab();
+              }}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setNewTabDialogOpen(false);
+                setNewTabName("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleCreateTab} disabled={!newTabName.trim()}>
+              <Plus className="w-4 h-4 mr-2" />
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog
