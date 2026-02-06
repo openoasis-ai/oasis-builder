@@ -149,6 +149,17 @@ export class CityBuilder extends Phaser.Scene {
             }
           : undefined;
 
+      // Support for custom origin in XML (optional attributes)
+      const originX = subtexture.getAttribute("originX");
+      const originY = subtexture.getAttribute("originY");
+      const origin =
+        originX && originY
+          ? {
+              x: parseFloat(originX),
+              y: parseFloat(originY),
+            }
+          : undefined;
+
       sourceTexture.add(name, 0, x, y, width, height);
 
       sprites.push({
@@ -158,6 +169,7 @@ export class CityBuilder extends Phaser.Scene {
         width,
         height,
         footprint,
+        origin,
       });
     });
 
@@ -291,7 +303,7 @@ export class CityBuilder extends Phaser.Scene {
       if (assetSet && sprite) {
         const textureKey = assetSet.textureKey;
         const tileName = sprite.name;
-        const origin = sprite.origin || { x: 0.5, y: 0.65 };
+        const origin = sprite.origin || { x: 0.5, y: 0.5 };
 
         if (this.hoverSprite) {
           this.hoverSprite.setTexture(textureKey, tileName);
@@ -475,7 +487,7 @@ export class CityBuilder extends Phaser.Scene {
     if (!assetSet || !spriteData) return;
 
     const footprint = spriteData.footprint || { width: 1, height: 1 };
-    const origin = spriteData.origin || { x: 0.5, y: 0.65 };
+    const origin = spriteData.origin || { x: 0.5, y: 0.5 };
     const textureKey = assetSet.textureKey;
     const tileName = spriteData.name;
 
@@ -662,7 +674,7 @@ export class CityBuilder extends Phaser.Scene {
       // Include origin if it's not the default
       if (
         tileData.origin &&
-        (tileData.origin.x !== 0.5 || tileData.origin.y !== 0.65)
+        (tileData.origin.x !== 0.5 || tileData.origin.y !== 0.5)
       ) {
         exportTile.origin = tileData.origin;
       }
@@ -804,7 +816,7 @@ export class CityBuilder extends Phaser.Scene {
       // Load tiles from JSON
       jsonData.tiles.forEach((tile: any) => {
         const footprint = tile.footprint || { width: 1, height: 1 };
-        const origin = tile.origin || { x: 0.5, y: 0.65 };
+        const origin = tile.origin || { x: 0.5, y: 0.5 };
         const layer = tile.layer || 0;
 
         // Handle legacy textureKey format (convert old format to new)

@@ -1,6 +1,6 @@
-# Isometric City Builder - Next.js
+# Oasis Builder - from [Open Oasis](https://openoasis.ai)
 
-A modern isometric city builder built with Next.js, Phaser.js, and shadcn/ui components.
+A modern isometric city builder in the Oasis built with Next.js, Phaser.js, and shadcn/ui components.
 
 ## Features
 
@@ -127,7 +127,7 @@ The game uses Phaser.js for rendering the isometric city. The Phaser scene is wr
 ```tsx
 const IsoCityGame = dynamic(
   () => import("@/components/iso-city-game").then((mod) => mod.IsoCityGame),
-  { ssr: false }
+  { ssr: false },
 );
 ```
 
@@ -142,10 +142,10 @@ const isoY = (gridX + gridY) * (tileHeight / 2);
 
 // Isometric to Grid
 const gridX = Math.floor(
-  (isoX / (tileWidth / 2) + isoY / (tileHeight / 2)) / 2
+  (isoX / (tileWidth / 2) + isoY / (tileHeight / 2)) / 2,
 );
 const gridY = Math.floor(
-  (isoY / (tileHeight / 2) - isoX / (tileWidth / 2)) / 2
+  (isoY / (tileHeight / 2) - isoX / (tileWidth / 2)) / 2,
 );
 ```
 

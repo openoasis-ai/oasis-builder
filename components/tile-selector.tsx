@@ -3,7 +3,15 @@
 import { useEffect, useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, Upload, X, Plus, Grid3X3, Expand, Trash2 } from "lucide-react";
+import {
+  Download,
+  Upload,
+  X,
+  Plus,
+  Grid3X3,
+  Expand,
+  Trash2,
+} from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -44,14 +52,14 @@ interface TileSelectorProps {
 
 // Map texture keys to image paths
 const TEXTURE_TO_IMAGE: Record<string, string> = {
-  texture_tiles: "/assets/cityTiles_sheet.png",
-  texture_details: "/assets/cityDetails_sheet.png",
-  texture_buildings: "/assets/buildingTiles_sheet.png",
+  texture_waters: "/assets/waters_sheet.png",
+  texture_roads: "/assets/roads_sheet.png",
+  texture_floors: "/assets/floors_sheet.png",
 };
 
 export function TileSelector({ onTileSelect }: TileSelectorProps) {
   const [assetSets, setAssetSets] = useState<Map<string, AssetSetWithPreviews>>(
-    new Map()
+    new Map(),
   );
   const [selectedAssetSetId, setSelectedAssetSetId] = useState<string>("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -109,7 +117,7 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
       setSelectedAssetSetId((current) => {
         if (current === id) {
           const remaining = Array.from(assetSets.keys()).filter(
-            (k) => k !== id
+            (k) => k !== id,
           );
           return remaining[0] || "";
         }
@@ -136,22 +144,22 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
       window.removeEventListener("phaserAssetSetLoaded", handleAssetSetLoaded);
       window.removeEventListener(
         "phaserAssetSetRemoved",
-        handleAssetSetRemoved
+        handleAssetSetRemoved,
       );
       window.removeEventListener(
         "gridPositionChange",
-        handleGridPositionChange
+        handleGridPositionChange,
       );
       window.removeEventListener(
         "phaserGridSizeChanged",
-        handleGridSizeChanged
+        handleGridSizeChanged,
       );
     };
   }, [assetSets]);
 
   const generatePreviews = async (
     sprites: SpriteData[],
-    imageSrc: string
+    imageSrc: string,
   ): Promise<string[]> => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -179,7 +187,7 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
             offsetX,
             offsetY,
             drawWidth,
-            drawHeight
+            drawHeight,
           );
 
           return canvas.toDataURL();
@@ -295,7 +303,7 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
     <>
       <Card className="w-80 h-full flex flex-col">
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg">City Builder</CardTitle>
+          <CardTitle className="text-lg">🌴 Oasis Builder</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 flex-1 flex flex-col overflow-hidden pt-0">
           {/* Save/Load Buttons */}
@@ -363,7 +371,9 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
             >
               <Grid3X3 className="w-3.5 h-3.5" />
             </Button>
-            <span className="text-xs font-medium">Grid: {gridSize}x{gridSize}</span>
+            <span className="text-xs font-medium">
+              Grid: {gridSize}x{gridSize}
+            </span>
             <div className="flex gap-1 ml-auto">
               <Button
                 size="sm"
@@ -519,10 +529,7 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
                                   size="sm"
                                   className="w-full justify-start text-destructive hover:text-destructive h-8 px-2"
                                   onClick={() =>
-                                    handleRemoveSprite(
-                                      assetSet.id,
-                                      index
-                                    )
+                                    handleRemoveSprite(assetSet.id, index)
                                   }
                                 >
                                   <Trash2 className="w-3.5 h-3.5 mr-2" />
@@ -533,9 +540,7 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
                           );
                         }
 
-                        return (
-                          <span key={index}>{tileButton}</span>
-                        );
+                        return <span key={index}>{tileButton}</span>;
                       })}
                       {/* Add button for custom assets */}
                       {assetSet.isCustom && (
