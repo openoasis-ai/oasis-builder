@@ -303,7 +303,7 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
     <>
       <Card className="w-80 h-full flex flex-col">
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg">🌴 Oasis Builder</CardTitle>
+          <CardTitle className="text-lg">Oasis Builder 🌴</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 flex-1 flex flex-col overflow-hidden pt-0">
           {/* Save/Load Buttons */}
