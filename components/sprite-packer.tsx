@@ -38,7 +38,7 @@ export function SpritePacker({
 }: SpritePackerProps) {
   const [open, setOpen] = useState(false);
   const [activeAddToAssetId, setActiveAddToAssetId] = useState<string | null>(
-    null
+    null,
   );
   const isAddingToExisting = !!activeAddToAssetId;
   const [mode, setMode] = useState<"upload" | "generate">("upload");
@@ -150,7 +150,7 @@ export function SpritePacker({
         imageDataUrl,
         footprintWidth,
         footprintHeight,
-        spriteScale
+        spriteScale,
       );
       setOriginalDimensions({
         width: result.originalWidth,
@@ -328,7 +328,7 @@ export function SpritePacker({
       height: number;
       footprint?: { width: number; height: number };
       origin?: { x: number; y: number };
-    }>
+    }>,
   ) => {
     // If adding to existing asset, use the add sprite function
     if (isAddingToExisting && activeAddToAssetId) {
@@ -337,7 +337,7 @@ export function SpritePacker({
         const success = await addSpriteToAsset(
           activeAddToAssetId,
           imageDataUrl,
-          sprites[0]
+          sprites[0],
         );
         if (success) {
           handleClose();
@@ -535,12 +535,12 @@ export function SpritePacker({
                 <Input
                   type="number"
                   min={1}
-                  max={4}
+                  // max={4}
                   value={footprintWidth}
                   onChange={(e) =>
                     handleFootprintChange(
                       Number(e.target.value),
-                      footprintHeight
+                      footprintHeight,
                     )
                   }
                   className="mt-1"
@@ -551,12 +551,12 @@ export function SpritePacker({
                 <Input
                   type="number"
                   min={1}
-                  max={4}
+                  // max={4}
                   value={footprintHeight}
                   onChange={(e) =>
                     handleFootprintChange(
                       footprintWidth,
-                      Number(e.target.value)
+                      Number(e.target.value),
                     )
                   }
                   className="mt-1"
@@ -626,9 +626,7 @@ export function SpritePacker({
             {/* Preview */}
             {(generatedImage || processedImage) && (
               <div className="border rounded-lg p-4 space-y-4">
-                <Label className="text-sm font-medium block">
-                  Preview
-                </Label>
+                <Label className="text-sm font-medium block">Preview</Label>
                 <div className="grid grid-cols-2 gap-4">
                   {generatedImage && (
                     <div>
@@ -636,7 +634,8 @@ export function SpritePacker({
                         Original
                         {originalDimensions && (
                           <span className="ml-1 text-primary">
-                            ({originalDimensions.width}x{originalDimensions.height})
+                            ({originalDimensions.width}x
+                            {originalDimensions.height})
                           </span>
                         )}
                       </p>
@@ -654,7 +653,8 @@ export function SpritePacker({
                         Processed ({footprintWidth}x{footprintHeight} tiles)
                         {processedDimensions && (
                           <span className="ml-1 text-primary">
-                            ({processedDimensions.width}x{processedDimensions.height})
+                            ({processedDimensions.width}x
+                            {processedDimensions.height})
                           </span>
                         )}
                       </p>

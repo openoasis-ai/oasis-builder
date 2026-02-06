@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, Upload, X, Plus } from "lucide-react";
+import { Download, Upload, X, Plus, Grid3X3, Expand } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -45,6 +45,8 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
   const [gridPosition, setGridPosition] = useState({ x: 0, y: 0 });
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [addToAssetId, setAddToAssetId] = useState<string | null>(null);
+  const [gridVisible, setGridVisible] = useState(true);
+  const [gridSize, setGridSize] = useState(30);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -100,9 +102,15 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
       setGridPosition(customEvent.detail);
     };
 
+    const handleGridSizeChanged = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      setGridSize(customEvent.detail.gridSize);
+    };
+
     window.addEventListener("phaserAssetSetLoaded", handleAssetSetLoaded);
     window.addEventListener("phaserAssetSetRemoved", handleAssetSetRemoved);
     window.addEventListener("gridPositionChange", handleGridPositionChange);
+    window.addEventListener("phaserGridSizeChanged", handleGridSizeChanged);
 
     return () => {
       window.removeEventListener("phaserAssetSetLoaded", handleAssetSetLoaded);
@@ -113,6 +121,10 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
       window.removeEventListener(
         "gridPositionChange",
         handleGridPositionChange
+      );
+      window.removeEventListener(
+        "phaserGridSizeChanged",
+        handleGridSizeChanged
       );
     };
   }, [assetSets]);
@@ -207,6 +219,20 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
     event.target.value = "";
   };
 
+  const handleToggleGrid = () => {
+    const newVisible = !gridVisible;
+    setGridVisible(newVisible);
+    if ((window as any).phaserSetGridVisible) {
+      (window as any).phaserSetGridVisible(newVisible);
+    }
+  };
+
+  const handleExpandGrid = (amount: number) => {
+    if ((window as any).phaserExpandGrid) {
+      (window as any).phaserExpandGrid(amount);
+    }
+  };
+
   const handleRemoveCustomAsset = (id: string) => {
     if ((window as any).phaserRemoveCustomAsset) {
       (window as any).phaserRemoveCustomAsset(id);
@@ -274,6 +300,41 @@ export function TileSelector({ onTileSelect }: TileSelectorProps) {
                 className="h-7 px-2"
               >
                 +
+              </Button>
+            </div>
+          </div>
+
+          {/* Grid Controls */}
+          <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
+            <Button
+              size="sm"
+              variant={gridVisible ? "default" : "outline"}
+              onClick={handleToggleGrid}
+              className="h-7 px-2"
+              title={gridVisible ? "Hide grid" : "Show grid"}
+            >
+              <Grid3X3 className="w-3.5 h-3.5" />
+            </Button>
+            <span className="text-xs font-medium">Grid: {gridSize}x{gridSize}</span>
+            <div className="flex gap-1 ml-auto">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleExpandGrid(-5)}
+                disabled={gridSize <= 5}
+                className="h-7 px-2"
+                title="Shrink grid by 5"
+              >
+                -
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleExpandGrid(5)}
+                className="h-7 px-2"
+                title="Expand grid by 5"
+              >
+                <Expand className="w-3.5 h-3.5" />
               </Button>
             </div>
           </div>
